@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Local saved designs (server persistence)
+studio/data/designs/*.json
+
+# OS / editor
+.DS_Store
+*.log
+.vscode/
+.idea/

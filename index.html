@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>System Sizer — Agentic, RAG &amp; Traditional Capacity Planning</title>
+<style>
+  :root{
+    --bg:#0f1320; --panel:#161b2d; --panel2:#1c2238; --line:#2a3350;
+    --ink:#e8ecf6; --muted:#97a1bd; --accent:#6ea8fe; --accent2:#5fd0c3;
+    --good:#5bd98a; --warn:#ffcf66; --bad:#ff7a7a; --chip:#222a44;
+    --shadow:0 1px 0 rgba(255,255,255,.03), 0 8px 24px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);
+    font:14px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent)}
+  h1,h2,h3,h4{margin:0 0 .4em;line-height:1.22}
+  h1{font-size:20px;letter-spacing:.2px} h2{font-size:16px}
+  h3{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+  .wrap{max-width:1180px;margin:0 auto;padding:18px}
+  header.app{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;
+    padding:14px 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#141a2c,#0f1320)}
+  header.app .title{display:flex;flex-direction:column}
+  header.app .title small{color:var(--muted);font-size:12px}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .seg-toggle{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg-toggle button{border:none;border-radius:0;background:var(--panel)}
+  .seg-toggle button.on{background:var(--accent);color:#0b1020;font-weight:700}
+  select,input,button{font:inherit;color:var(--ink)}
+  input[type=number],input[type=text],select{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%}
+  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:transparent}
+  button{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:8px 12px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);color:#0b1020;border-color:transparent;font-weight:600}
+  button.primary:hover{filter:brightness(1.06)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  /* wizard */
+  .wizbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .progress{flex:1;min-width:160px;height:7px;background:var(--panel);border:1px solid var(--line);border-radius:99px;overflow:hidden}
+  .progress > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+  .stepmeta{color:var(--muted);font-size:12px;white-space:nowrap}
+  .typegrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
+  .typecard{text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;cursor:pointer;transition:.12s}
+  .typecard:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .typecard .ic{font-size:26px} .typecard h2{margin:8px 0 4px} .typecard p{color:var(--muted);font-size:12.5px;margin:0}
+  .guide{background:rgba(110,168,254,.08);border:1px solid rgba(110,168,254,.3);border-radius:12px;padding:12px 14px;margin-bottom:14px;color:#cfe0ff}
+  .stepcard{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow)}
+  .nav{display:flex;justify-content:space-between;gap:10px;margin-top:18px}
+  /* tabs (expert) */
+  .tabs{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 0}
+  .tab{padding:9px 14px;border:1px solid var(--line);border-bottom:none;border-radius:10px 10px 0 0;background:var(--panel);color:var(--muted);cursor:pointer;font-weight:600}
+  .tab.active{background:var(--panel2);color:var(--ink);box-shadow:inset 0 2px 0 var(--accent)}
+  .panel{display:none;background:var(--panel2);border:1px solid var(--line);border-radius:0 12px 12px 12px;padding:18px;box-shadow:var(--shadow)}
+  .panel.active{display:block}
+  .cols{display:grid;grid-template-columns:minmax(280px,360px) 1fr;gap:20px}
+  @media (max-width:820px){.cols{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+  .grid.one{grid-template-columns:1fr}
+  .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  .info{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:var(--chip);border:1px solid var(--line);color:var(--muted);font-size:10px;cursor:help;flex:0 0 auto}
+  .checkrow{display:flex;align-items:center;gap:8px;padding-top:18px}
+  .checkrow input{width:auto}
+  .metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .metric{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+  .metric .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  .metric .v{font-size:19px;font-weight:700;margin-top:3px}
+  .metric .v small{font-size:12px;font-weight:600;color:var(--muted)}
+  .metric.big .v{font-size:23px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700}
+  .pill.ok{background:rgba(91,217,138,.16);color:var(--good)}
+  .pill.bad{background:rgba(255,122,122,.16);color:var(--bad)}
+  .pill.warn{background:rgba(255,207,102,.16);color:var(--warn)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .scroll{overflow-x:auto}
+  .note{color:var(--muted);font-size:12px;margin-top:6px}
+  .seg{height:8px;border-radius:4px;background:var(--accent)}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:12px;color:var(--muted)}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  .subhead{display:flex;align-items:center;gap:8px;margin:4px 0 10px;flex-wrap:wrap}
+  code{background:#0c1020;border:1px solid var(--line);border-radius:6px;padding:1px 5px;font-size:12px}
+  .eq .v{color:var(--accent2);font-weight:700}
+  #reportOutput{display:none}
+  #reportOutput.show{display:block;background:#fff;color:#15233b;border-radius:12px;padding:26px;border:1px solid var(--line)}
+  #reportOutput h1,#reportOutput h2,#reportOutput h3{color:#0b2a4a}
+  #reportOutput h2{border-bottom:2px solid #d8e2f0;padding-bottom:4px;margin-top:22px}
+  #reportOutput th,#reportOutput td{border-bottom:1px solid #e2e8f2}
+  #reportOutput th{color:#41527a}
+  #reportOutput code{background:#eef3fb;border-color:#d8e2f0;color:#13325a}
+  #reportOutput .meta{color:#5a6b8c;font-size:12px}
+  #reportOutput .eq .v{color:#0b6e62}
+  @media print{
+    body{background:#fff}
+    .noprint{display:none !important}
+    .wrap{max-width:none;padding:0}
+    #reportOutput{display:block !important;border:none;border-radius:0;padding:0;color:#000}
+    #reportOutput h2{break-after:avoid} table,tr,td,th{break-inside:avoid} .report-section{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<header class="app noprint">
+  <div class="title">
+    <h1>System Sizer</h1>
+    <small>Capacity planning &amp; sizing — agentic LLM, RAG, self-hosted GPU, and traditional applications. Runs entirely in your browser.</small>
+  </div>
+  <div class="toolbar">
+    <div class="seg-toggle" id="modeToggle">
+      <button data-mode="wizard" class="on">Wizard</button>
+      <button data-mode="expert">Expert</button>
+    </div>
+    <button id="btnShare" title="Copy a shareable link encoding all inputs">Copy link</button>
+    <button id="btnJson" title="Copy current inputs as JSON">Copy JSON</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <!-- WIZARD -->
+  <div id="wizard"><div id="wizContent"></div></div>
+
+  <!-- EXPERT -->
+  <div id="expert" style="display:none">
+    <div class="tabs noprint" id="tabs">
+      <div class="tab active" data-tab="agentic">Agentic API</div>
+      <div class="tab" data-tab="rag">RAG sizing</div>
+      <div class="tab" data-tab="gpu">Self-hosted GPU</div>
+      <div class="tab" data-tab="trad">Traditional app</div>
+      <div class="tab" data-tab="assumptions">Assumptions</div>
+      <div class="tab" data-tab="report">Report</div>
+    </div>
+    <section class="panel active" id="panel-agentic"><div class="cols"><div id="forms-agentic"></div><div id="out-agentic"></div></div></section>
+    <section class="panel" id="panel-rag"><div class="cols"><div id="forms-rag"></div><div id="out-rag"></div></div></section>
+    <section class="panel" id="panel-gpu"><div class="cols"><div id="forms-gpu"></div><div id="out-gpu"></div></div></section>
+    <section class="panel" id="panel-trad"><div class="cols"><div id="forms-trad"></div><div id="out-trad"></div></div></section>
+    <section class="panel" id="panel-assumptions">
+      <div class="card"><h3>Editable pricing &amp; specs</h3>
+        <p class="note">Presets pre-fill when you pick a model/GPU; every value is editable. Claude prices are current (June 2026); others are approximate.</p>
+        <div class="scroll"><table id="refTable"></table></div></div>
+      <div class="card"><h3>Global assumptions</h3>
+        <p class="note">Defaults that seed the modules (latency, headroom, retries).</p>
+        <div class="grid" id="forms-assume"></div></div>
+    </section>
+    <section class="panel" id="panel-report">
+      <div class="card noprint">
+        <h3>Generate report</h3>
+        <div class="grid" id="forms-report"></div>
+        <div class="toolbar" style="margin-top:12px">
+          <button class="primary" id="btnGen">Generate / refresh</button>
+          <button id="btnPrint">Print / Save as PDF</button>
+          <button id="btnMd">Download Markdown</button>
+          <button id="btnHtml">Download HTML</button>
+        </div>
+        <p class="note">The report restates every assumption, shows each equation with your numbers substituted, lists results, explains how to read them, and appends a glossary of all abbreviations.</p>
+      </div>
+      <div id="reportOutput"></div>
+    </section>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================ presets ============================ */
+const MODELS = {
+  "claude-fable-5":   {label:"Claude Fable 5", in:10, out:50, ctx:1_000_000},
+  "claude-opus-4-8":  {label:"Claude Opus 4.8", in:5, out:25, ctx:1_000_000},
+  "claude-opus-4-7":  {label:"Claude Opus 4.7", in:5, out:25, ctx:1_000_000},
+  "claude-sonnet-4-6":{label:"Claude Sonnet 4.6", in:3, out:15, ctx:1_000_000},
+  "claude-haiku-4-5": {label:"Claude Haiku 4.5", in:1, out:5, ctx:200_000},
+  "gpt-5.5":          {label:"OpenAI GPT-5.5 (approx)", in:2.5, out:30, ctx:400_000},
+  "custom":           {label:"Custom", in:3, out:15, ctx:1_000_000},
+};
+const EMB = {
+  "oai-3-small":{label:"OpenAI text-embedding-3-small", dims:1536, price:0.02},
+  "oai-3-large":{label:"OpenAI text-embedding-3-large", dims:3072, price:0.13},
+  "cohere-v4":  {label:"Cohere embed v4", dims:1536, price:0.12},
+  "bge-large":  {label:"BGE-large-en-v1.5 (self-host)", dims:1024, price:0},
+  "minilm":     {label:"MiniLM (self-host)", dims:384, price:0},
+  "nomic":      {label:"Nomic-embed (self-host)", dims:768, price:0},
+  "custom":     {label:"Custom", dims:1536, price:0.02},
+};
+const INDEXES = {flat:{label:"FLAT (exact)",mult:1.0}, ivf_flat:{label:"IVF_FLAT",mult:1.05}, hnsw:{label:"HNSW",mult:1.8},
+  ivf_sq8:{label:"IVF_SQ8 (scalar quant)",mult:0.30}, ivf_pq:{label:"IVF_PQ (product quant)",mult:0.12}};
+const QUANT = {fp32:{label:"fp32 (4 B)",bytes:4}, fp16:{label:"fp16 (2 B)",bytes:2}, int8:{label:"int8 (1 B)",bytes:1}};
+const GPUS = {h100:{label:"H100 80GB",vram:80,bw:3350,cost:3.0}, "a100-80":{label:"A100 80GB",vram:80,bw:2039,cost:1.8},
+  "a100-40":{label:"A100 40GB",vram:40,bw:1600,cost:1.2}, custom:{label:"Custom",vram:80,bw:2000,cost:2.0}};
+const LLMS = {"llama-70b":{label:"Llama-class 70B",paramsB:70,layers:80,kvHeads:8,headDim:128},
+  "llama-8b":{label:"Llama-class 8B",paramsB:8,layers:32,kvHeads:8,headDim:128},
+  "llama-405b":{label:"Llama-class 405B",paramsB:405,layers:126,kvHeads:8,headDim:128}, custom:{label:"Custom",paramsB:70,layers:80,kvHeads:8,headDim:128}};
+const PREC = {fp16:{label:"FP16/BF16 (2 B)",bytes:2}, int8:{label:"INT8 (1 B)",bytes:1}, int4:{label:"INT4 (0.5 B)",bytes:0.5}};
+const TIERS = [{name:"Tier 1",itpm:500_000,otpm:80_000,rpm:50},{name:"Tier 2",itpm:2_000_000,otpm:200_000,rpm:1000},
+  {name:"Tier 3",itpm:5_000_000,otpm:400_000,rpm:2000},{name:"Tier 4",itpm:10_000_000,otpm:800_000,rpm:4000}];
+const CACHE_READ=0.10, BATCH=0.50;
+
+const GLOSSARY = {
+  "DAU":"Daily Active Users.",
+  "TTFT":"Time To First Token — latency until the first output token appears.",
+  "TPM / RPM":"Tokens / Requests Per Minute — common rate-limit units.",
+  "ITPM / OTPM":"Input / Output Tokens Per Minute — Anthropic's token rate limits (input vs output counted separately).",
+  "QPS / RPS":"Queries / Requests Per Second.",
+  "Token":"The unit an LLM reads/writes (~3–4 characters of English).",
+  "Context window":"Maximum tokens a model can attend to in one request.",
+  "Prompt caching":"Reusing a stable prompt prefix at reduced cost (read ≈0.1×, write ≈1.25× base input price).",
+  "Batch API":"Asynchronous, ~50%-discounted bulk processing (≤24h turnaround).",
+  "RAG":"Retrieval-Augmented Generation — retrieve relevant chunks, then generate an answer grounded in them.",
+  "Chunk":"A slice of a document that is embedded and retrieved.",
+  "Embedding":"A numeric vector representing text for similarity search.",
+  "Vector DB":"Database that stores and searches embeddings (Pinecone, Qdrant, Weaviate, Milvus, pgvector).",
+  "ANN":"Approximate Nearest Neighbor search.",
+  "HNSW":"Hierarchical Navigable Small World — a graph-based ANN index (high recall, RAM-heavy).",
+  "IVF / PQ / SQ":"Inverted File index / Product Quantization / Scalar Quantization — compressed ANN index families.",
+  "top-k":"Number of chunks retrieved per query and fed to the model.",
+  "VRAM":"GPU video memory.",
+  "KV cache":"Cached attention Keys/Values; grows with context length × batch size and often dominates VRAM.",
+  "GQA / MQA":"Grouped / Multi-Query Attention — fewer KV heads than query heads, shrinking the KV cache.",
+  "Quantization":"Storing weights/vectors at lower precision (FP16/INT8/INT4) to save memory.",
+  "Tensor parallelism":"Splitting one model's weights across multiple GPUs when it doesn't fit on one.",
+  "Continuous batching":"Dynamically batching in-flight requests (e.g. vLLM) to raise throughput.",
+  "Little's Law":"L = λ × W — average in-flight items = arrival rate × time spent in the system.",
+  "Utilization (ρ)":"Fraction of capacity in use; latency rises sharply as ρ approaches 1.",
+  "Peak-to-average ratio":"Peak load divided by average load; real traffic clusters, so size for peak.",
+  "Headroom":"Spare capacity reserved above expected peak for spikes, retries, and scale-up lag.",
+  "Concurrency":"Number of requests being processed simultaneously (from Little's Law).",
+  "IOPS":"Input/Output Operations Per Second — a storage/disk throughput unit for databases.",
+  "Working set":"The hot subset of data actively accessed; what you size cache memory against.",
+  "Cache hit ratio":"Fraction of reads served from cache instead of the database.",
+  "Read replica":"A read-only copy of a database that absorbs read traffic to scale reads.",
+  "Redundancy (N+1)":"Extra capacity beyond the minimum so the system survives instance failure.",
+  "Replication factor":"Number of stored copies of data (durability/availability) — multiplies storage.",
+  "Bandwidth":"Network throughput, here ingress/egress in Mbps/Gbps.",
+  "Throughput":"Work completed per unit time (requests/sec, tokens/sec, vectors/sec).",
+};
+
+/* ============================ fields ============================ */
+const F = {
+  "agentic-model":[
+    {id:"ag_model", label:"Model", type:"select", options:MODELS, def:"claude-sonnet-4-6", help:"Picks default prices; prices stay editable."},
+    {id:"ag_in", label:"Input $/1M", def:3, step:"any", help:"Editable input price per 1M tokens."},
+    {id:"ag_out", label:"Output $/1M", def:15, step:"any", help:"Editable output price per 1M tokens (output ≈5× input on Claude)."},
+  ],
+  "agentic-demand":[
+    {id:"ag_dau", label:"Daily active users (DAU)", def:5000, help:"Users active per day driving agent tasks."},
+    {id:"ag_tasksPerUser", label:"Tasks / user / day", def:2, step:"any", help:"Agent tasks each active user starts per day."},
+  ],
+  "agentic-tokens":[
+    {id:"ag_system", label:"System prompt (tok)", def:2000, help:"Re-sent every call; a prime caching target."},
+    {id:"ag_tools", label:"Tool definitions (tok)", def:1000, help:"Tool/function schemas; re-sent every call."},
+    {id:"ag_user", label:"User input / turn (tok)", def:300, help:"New user/trigger content per loop step."},
+    {id:"ag_toolout", label:"Tool output / turn (tok)", def:1500, help:"Observation/tool result fed back per step."},
+    {id:"ag_output", label:"Output / call (tok)", def:500, help:"Model output tokens per call."},
+    {id:"ag_growth", label:"Context grows each step", type:"check", def:true, help:"ON: history accumulates each step (cost ∝ N²). OFF: compaction/stateless (cost ∝ N)."},
+  ],
+  "agentic-loop":[
+    {id:"ag_calls", label:"LLM calls / task", def:4, help:"Agent loop iterations / tool round-trips. Simple 2–3, complex 8–20+."},
+    {id:"ag_multi", label:"Multi-agent", type:"check", def:false, help:"Add orchestrator + sub-agent fan-out. Multi-agent can use ~15× the tokens of a single chat."},
+    {id:"ag_subagents", label:"# sub-agents", def:3, help:"Sub-agents spawned per task (if multi-agent)."},
+    {id:"ag_subcalls", label:"Calls / sub-agent", def:4, help:"Loop iterations inside each sub-agent."},
+  ],
+  "agentic-cost":[
+    {id:"ag_cache", label:"Cache hit %", def:0, help:"Share of the stable prefix served from cache (~0.1×); also raises effective ITPM."},
+    {id:"ag_batch", label:"Batch %", def:0, help:"Share via Batch API at 50% off (non-real-time)."},
+    {id:"ag_peak", label:"Peak / avg ratio", def:3, step:"any", help:"Multiplier from average to peak load."},
+    {id:"ag_retry", label:"Retry rate %", def:2, step:"any", help:"% of requests that fail and retry."},
+    {id:"ag_tier", label:"Anthropic tier (check)", type:"select", options:{t1:{label:"Tier 1"},t2:{label:"Tier 2"},t3:{label:"Tier 3"},t4:{label:"Tier 4"}}, def:"t2", help:"Tier to check peak load against (Opus-scale limits)."},
+  ],
+  "rag-models":[
+    {id:"rg_emb", label:"Embedding model", type:"select", options:EMB, def:"oai-3-small", help:"Sets default dims + price (editable)."},
+    {id:"rg_dims", label:"Dimensions", def:1536, help:"Embedding vector dimensionality."},
+    {id:"rg_embprice", label:"Embed $/1M", def:0.02, step:"any", help:"Embedding price per 1M tokens (0 = self-host)."},
+    {id:"rg_genmodel", label:"Generation model", type:"select", options:MODELS, def:"claude-sonnet-4-6", help:"Answer-generation model (sets prices; editable)."},
+    {id:"rg_genin", label:"Gen input $/1M", def:3, step:"any"},
+    {id:"rg_genoutp", label:"Gen output $/1M", def:15, step:"any"},
+  ],
+  "rag-corpus":[
+    {id:"rg_docs", label:"# documents", def:1_000_000, help:"Total documents in the corpus."},
+    {id:"rg_tokdoc", label:"Avg tokens / doc", def:1500, help:"Average document length."},
+    {id:"rg_chunk", label:"Chunk size (tok)", def:512, help:"Tokens per chunk (common 256–1024)."},
+    {id:"rg_overlap", label:"Overlap %", def:10, step:"any", help:"Overlap as % of chunk size (5–10% typical)."},
+  ],
+  "rag-index":[
+    {id:"rg_index", label:"Index type", type:"select", options:INDEXES, def:"hnsw", help:"ANN index → memory multiplier vs fp32 raw."},
+    {id:"rg_quant", label:"Stored vector precision", type:"select", options:QUANT, def:"fp32", help:"Precision of stored raw vectors (raw-size line)."},
+    {id:"rg_repl", label:"Replication factor", def:1, step:"any", help:"Index copies for HA/throughput (×storage)."},
+    {id:"rg_meta", label:"Metadata overhead %", def:50, step:"any", help:"Extra for ids, payloads, segments, versions."},
+  ],
+  "rag-query":[
+    {id:"rg_qmonth", label:"Queries / month", def:3_000_000, help:"Total queries per month."},
+    {id:"rg_qps", label:"Target QPS", def:50, step:"any", help:"Peak retrieval queries/sec to support."},
+    {id:"rg_topk", label:"top-k chunks", def:5, help:"Chunks retrieved & passed to the model per query."},
+    {id:"rg_sys", label:"System+query (tok)", def:1100, help:"System prompt + user query tokens per request."},
+    {id:"rg_genout", label:"Gen output (tok)", def:500, help:"Generated answer tokens per query."},
+    {id:"rg_write", label:"Write rate (vec/s)", def:30000, help:"Vector DB ingestion throughput."},
+    {id:"rg_embtps", label:"Embed throughput (tok/s)", def:50000, help:"Embedding pipeline throughput for the build."},
+  ],
+  "gpu-model":[
+    {id:"gp_model", label:"Model preset", type:"select", options:LLMS, def:"llama-70b", help:"Sets params/layers/KV heads/head-dim (editable)."},
+    {id:"gp_params", label:"Params (billions)", def:70, step:"any"},
+    {id:"gp_prec", label:"Precision", type:"select", options:PREC, def:"fp16", help:"Weight precision → bytes/param."},
+    {id:"gp_layers", label:"# layers", def:80},
+    {id:"gp_kv", label:"# KV heads (GQA)", def:8, help:"KV heads after GQA/MQA (fewer = smaller KV cache)."},
+    {id:"gp_headdim", label:"Head dim", def:128},
+  ],
+  "gpu-hw":[
+    {id:"gp_gpu", label:"GPU", type:"select", options:GPUS, def:"h100", help:"Sets VRAM, bandwidth, $/hr (editable)."},
+    {id:"gp_vram", label:"GPU VRAM (GB)", def:80, step:"any"},
+    {id:"gp_bw", label:"Mem bandwidth (GB/s)", def:3350, step:"any", help:"Drives memory-bound decode throughput."},
+    {id:"gp_seq", label:"Context length (tok)", def:8192, help:"Max sequence length for KV-cache sizing."},
+    {id:"gp_batch", label:"Batch size", def:8, help:"Concurrent sequences per replica (caps KV-cache)."},
+    {id:"gp_tmult", label:"Throughput ×(batching)", def:4, step:"any", help:"Continuous-batching speedup over batch-1 decode (~3–5×)."},
+  ],
+  "gpu-load":[
+    {id:"gp_qps", label:"Target peak QPS", def:20, step:"any", help:"Requests/sec to serve at peak."},
+    {id:"gp_avgout", label:"Avg output / req (tok)", def:500, help:"Output tokens per request (service time)."},
+    {id:"gp_rho", label:"Target utilization ρ", def:0.7, step:"any", help:"Keep ≤0.7–0.8; latency explodes as ρ→1."},
+    {id:"gp_cost", label:"GPU $/hr", def:3.0, step:"any"},
+    {id:"gp_api", label:"API $/1M (compare)", def:9.0, step:"any", help:"Blended API price for the self-host breakeven."},
+  ],
+  "trad-traffic":[
+    {id:"td_users", label:"Active users (daily)", def:100000, help:"Daily active users / clients."},
+    {id:"td_reqPerUser", label:"Requests / user / day", def:50, help:"Average API/page requests per active user/day."},
+    {id:"td_peak", label:"Peak / avg ratio", def:3, step:"any", help:"Peak traffic ÷ average (size for peak)."},
+    {id:"td_respKb", label:"Avg response size (KB)", def:50, step:"any", help:"For egress bandwidth."},
+    {id:"td_reqKb", label:"Avg request size (KB)", def:2, step:"any", help:"For ingress bandwidth."},
+    {id:"td_latency", label:"Avg processing time (s)", def:0.1, step:"any", help:"Per-request service time (Little's Law concurrency)."},
+  ],
+  "trad-compute":[
+    {id:"td_rpsPerServer", label:"Sustained RPS / instance", def:200, step:"any", help:"Requests/sec one app instance handles at full load."},
+    {id:"td_util", label:"Target utilization", def:0.6, step:"any", help:"Run instances at this fraction of capacity (headroom for spikes)."},
+    {id:"td_redundancy", label:"Redundancy (extra)", def:0.5, step:"any", help:"Extra capacity for HA/failover, as a fraction (0.5 = +50%, N+1-style)."},
+  ],
+  "trad-data":[
+    {id:"td_initGb", label:"Current data size (GB)", def:500, step:"any", help:"Today's dataset size before growth."},
+    {id:"td_newPerDay", label:"New records / day", def:5000000, help:"Rows/objects written per day."},
+    {id:"td_bytesRec", label:"Bytes / record", def:1024, help:"Average stored size per record."},
+    {id:"td_retentionYears", label:"Projection (years)", def:3, step:"any", help:"Horizon to project storage growth over."},
+    {id:"td_replication", label:"Replication factor", def:3, step:"any", help:"Stored copies for durability/HA (×storage)."},
+  ],
+  "trad-cache":[
+    {id:"td_cacheFrac", label:"Hot data in cache %", def:20, step:"any", help:"Fraction of the dataset kept in cache (working set)."},
+    {id:"td_cacheHit", label:"Read cache hit %", def:80, step:"any", help:"Share of reads served from cache (offloads the DB)."},
+  ],
+  "trad-db":[
+    {id:"td_writeRatio", label:"Write requests %", def:20, step:"any", help:"% of requests that write to the DB."},
+    {id:"td_writeIops", label:"IOPS / write", def:3, step:"any", help:"Disk operations per write query."},
+    {id:"td_readIops", label:"IOPS / uncached read", def:1, step:"any", help:"Disk operations per cache-miss read."},
+    {id:"td_dbReplicaQps", label:"Read QPS / replica", def:5000, step:"any", help:"Read queries/sec one DB read-replica sustains."},
+  ],
+  "trad-cost":[
+    {id:"td_costServer", label:"App instance $/mo", def:60, step:"any"},
+    {id:"td_costDb", label:"DB node $/mo", def:300, step:"any"},
+    {id:"td_costCacheGb", label:"Cache $/GB-mo", def:8, step:"any"},
+    {id:"td_costStoreGb", label:"Storage $/GB-mo", def:0.08, step:"any"},
+    {id:"td_costEgressGb", label:"Egress $/GB", def:0.05, step:"any"},
+  ],
+  "assume":[
+    {id:"as_headroom", label:"Global headroom %", def:50, step:"any", help:"Safety margin above peak for provisioning."},
+    {id:"as_ttft", label:"TTFT (s)", def:0.7, step:"any", help:"Time to first token (latency)."},
+    {id:"as_tps", label:"Output speed (tok/s)", def:95, step:"any", help:"Model output tokens/sec (latency)."},
+    {id:"as_tooltime", label:"Tool time / step (s)", def:0.3, step:"any", help:"Avg tool execution time per agent step."},
+    {id:"as_retries", label:"Avg retries / failure", def:2, step:"any", help:"Mean retry attempts per failed request."},
+  ],
+  "report":[
+    {id:"rep_title", label:"Report title", type:"text", def:"Capacity & Sizing Report"},
+    {id:"rep_for", label:"Scenario / prepared for", type:"text", def:""},
+    {id:"rep_scope", label:"Include modules", type:"select", options:{all:{label:"All modules"},agentic:{label:"Agentic only"},rag:{label:"RAG only"},gpu:{label:"Self-hosted GPU only"},trad:{label:"Traditional only"}}, def:"all"},
+    {id:"rep_notes", label:"Notes", type:"text", def:""},
+  ],
+};
+const GROUPS = {
+  "agentic-model":"Model & pricing","agentic-demand":"Demand","agentic-tokens":"Per-call token model","agentic-loop":"Agent loop & multi-agent","agentic-cost":"Caching, batch & limits",
+  "rag-models":"Embedding & generation models","rag-corpus":"Corpus & chunking","rag-index":"Index & storage","rag-query":"Query path & generation",
+  "gpu-model":"Model","gpu-hw":"Hardware & serving","gpu-load":"Load & economics",
+  "trad-traffic":"Traffic","trad-compute":"Compute / app servers","trad-data":"Data & storage growth","trad-cache":"Caching","trad-db":"Database","trad-cost":"Unit costs ($/mo)",
+};
+const SECTIONS = {
+  agentic:["agentic-model","agentic-demand","agentic-tokens","agentic-loop","agentic-cost"],
+  rag:["rag-models","rag-corpus","rag-index","rag-query"],
+  gpu:["gpu-model","gpu-hw","gpu-load"],
+  trad:["trad-traffic","trad-compute","trad-data","trad-cache","trad-db","trad-cost"],
+};
+
+/* ============================ state (STORE) ============================ */
+const STORE = {};
+function initStore(){ for(const g in F) for(const f of F[g]) STORE[f.id]= (f.type==="check"? !!f.def : f.def); }
+const $ = id => document.getElementById(id);
+function rawVal(id){ if(id in STORE) return STORE[id]; const el=$(id); if(!el) return undefined; return el.type==="checkbox"?el.checked:el.value; }
+function num(id){ const v=parseFloat(rawVal(id)); return isFinite(v)?v:0; }
+function str(id){ const v=rawVal(id); return v==null?"":String(v); }
+function bool(id){ return !!rawVal(id); }
+function setVal(id,v){ STORE[id]=v; const el=$(id); if(el){ if(el.type==="checkbox") el.checked=!!v; else el.value=v; } }
+
+/* ============================ helpers ============================ */
+function fmt(n,d=0){ if(!isFinite(n)) return "—"; return Number(n).toLocaleString(undefined,{maximumFractionDigits:d}); }
+function money(n){ if(!isFinite(n)) return "—"; if(Math.abs(n)>=1) return "$"+n.toLocaleString(undefined,{maximumFractionDigits:2}); return "$"+n.toLocaleString(undefined,{maximumFractionDigits:n<0.001?6:4}); }
+function gb(x){ if(!isFinite(x)) return "—"; if(x>=1024) return (x/1024).toFixed(2)+" TB"; if(x>=1) return x.toFixed(1)+" GB"; return (x*1024).toFixed(0)+" MB"; }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+function ceil(x){ return Math.ceil(x-1e-9); }
+function help(f){ return f.help ? `<span class="info" title="${esc(f.help)}">i</span>` : ""; }
+function buildField(f){
+  const cur = (f.id in STORE)? STORE[f.id] : f.def;
+  if(f.type==="check") return `<div class="field"><div class="checkrow"><input type="checkbox" id="${f.id}" ${cur?"checked":""}><label style="margin:0">${esc(f.label)}</label>${help(f)}</div></div>`;
+  let input;
+  if(f.type==="select"){ const opts=Object.entries(f.options).map(([k,v])=>`<option value="${k}" ${k===cur?"selected":""}>${esc(v.label)}</option>`).join(""); input=`<select id="${f.id}">${opts}</select>`; }
+  else if(f.type==="text"){ input=`<input type="text" id="${f.id}" value="${esc(cur==null?"":cur)}">`; }
+  else { input=`<input type="number" id="${f.id}" value="${cur}" step="${f.step||"1"}">`; }
+  return `<div class="field"><label>${esc(f.label)} ${help(f)}</label>${input}</div>`;
+}
+function groupHTML(g){ return F[g].map(buildField).join(""); }
+function metric(k,v,sub,cls=""){ return `<div class="metric ${cls}"><div class="k">${esc(k)}</div><div class="v">${v}${sub?` <small>${sub}</small>`:""}</div></div>`; }
+const C=["#6ea8fe","#5fd0c3","#ffcf66","#ff9d7a","#b89cff","#7ad1ff"];
+function stackBar(segs){ const total=segs.reduce((a,s)=>a+Math.max(0,s.value),0)||1;
+  const rects=segs.map(s=>`<div class="seg" style="width:${Math.max(0,s.value)/total*100}%;background:${s.color}"></div>`).join("");
+  const legend=segs.map(s=>`<span><i style="background:${s.color}"></i>${esc(s.label)} — ${esc(s.disp)}</span>`).join("");
+  return `<div style="display:flex;gap:2px;height:8px;border-radius:4px;overflow:hidden">${rects}</div><div class="legend">${legend}</div>`; }
+
+/* ============================ compute: agentic ============================ */
+function loopTokens(calls,sys,base,out,growth){
+  let input = growth ? calls*sys + base*calls*(calls+1)/2 + out*calls*(calls-1)/2 : calls*(sys+base);
+  return {input, output:calls*out, total:input+calls*out, cacheable:calls*sys};
+}
+function computeAgentic(){
+  const dau=num("ag_dau"), tpu=num("ag_tasksPerUser"), calls=num("ag_calls");
+  const sys=num("ag_system")+num("ag_tools"), base=num("ag_user")+num("ag_toolout"), out=num("ag_output"), growth=bool("ag_growth");
+  const inP=num("ag_in"), outP=num("ag_out");
+  const cache=Math.min(100,Math.max(0,num("ag_cache")))/100, batch=Math.min(100,Math.max(0,num("ag_batch")))/100;
+  const peak=num("ag_peak")||1, retry=num("ag_retry")/100, retries=num("as_retries");
+  const ttft=num("as_ttft"), tps=num("as_tps")||1, tooltime=num("as_tooltime");
+  const orch=loopTokens(calls,sys,base,out,growth);
+  let total={input:orch.input,output:orch.output,total:orch.total,cacheable:orch.cacheable}, effCalls=calls;
+  if(bool("ag_multi")){ const ns=num("ag_subagents"), sc=num("ag_subcalls"), sub=loopTokens(sc,sys,base,out,growth);
+    total.input+=ns*sub.input; total.output+=ns*sub.output; total.cacheable+=ns*sub.cacheable; total.total=total.input+total.output; effCalls=calls+ns*sc; }
+  const tokensPerTask=total.total;
+  const cacheable=Math.min(total.cacheable,total.input), cachedRead=cacheable*cache;
+  const inputBilled=(total.input-cachedRead)+cachedRead*CACHE_READ;
+  const inputCost=inputBilled*inP/1e6, outputCost=total.output*outP/1e6;
+  let costPerTask=inputCost+outputCost; costPerTask=costPerTask*(1-batch)+costPerTask*batch*BATCH;
+  const costNoOpt=(total.input*inP+total.output*outP)/1e6, savings=costNoOpt>0?(1-costPerTask/costNoOpt):0;
+  const tasksDay=dau*tpu, costMonth=costPerTask*tasksDay*30, costUser=costPerTask*tpu*30;
+  const tasksSec=tasksDay/86400, callsSec=tasksSec*effCalls, uncachedInput=total.input-cachedRead;
+  const avgITPM=tasksSec*uncachedInput*60, avgOTPM=tasksSec*total.output*60, avgRPM=callsSec*60;
+  const peakITPM=avgITPM*peak, peakOTPM=avgOTPM*peak, peakRPM=avgRPM*peak;
+  const stepLat=ttft+out/tps+tooltime, taskLat=calls*stepLat, concurrency=callsSec*stepLat, effLoad=1+retry*retries;
+  const tIdx={t1:0,t2:1,t3:2,t4:3}[str("ag_tier")]||1, tier=TIERS[tIdx];
+  const fits=peakITPM<=tier.itpm&&peakOTPM<=tier.otpm&&peakRPM<=tier.rpm;
+  let minTier=null; for(const t of TIERS){ if(peakITPM<=t.itpm&&peakOTPM<=t.otpm&&peakRPM<=t.rpm){minTier=t.name;break;} }
+  const eqs=[
+    {name:"Tokens / task", formula:"Σ steps (system+tools + history + output)", sub:`${calls} calls${bool("ag_multi")?` + ${num("ag_subagents")}×${num("ag_subcalls")} sub-agent`:""}, growth ${growth?"on":"off"}`, value:`${fmt(tokensPerTask)} tok (${fmt(total.input)} in / ${fmt(total.output)} out)`},
+    {name:"Cost / task", formula:"(input_billed×in$ + output×out$)/1e6 · cache · batch", sub:`(${fmt(inputBilled)}×$${inP} + ${fmt(total.output)}×$${outP})/1e6, batch ${Math.round(batch*100)}%`, value:money(costPerTask)},
+    {name:"Cost / user / month", formula:"cost/task × tasks/user/day × 30", sub:`${money(costPerTask)} × ${tpu} × 30`, value:money(costUser)},
+    {name:"Monthly cost", formula:"cost/task × DAU × tasks/user/day × 30", sub:`${money(costPerTask)} × ${fmt(dau)} × ${tpu} × 30`, value:money(costMonth)},
+    {name:"Peak ITPM (uncached)", formula:"tasks/sec × uncached_input × 60 × peak", sub:`${tasksSec.toFixed(4)} × ${fmt(uncachedInput)} × 60 × ${peak}`, value:fmt(peakITPM)},
+    {name:"Peak OTPM", formula:"tasks/sec × output × 60 × peak", sub:`${tasksSec.toFixed(4)} × ${fmt(total.output)} × 60 × ${peak}`, value:fmt(peakOTPM)},
+    {name:"Peak RPM", formula:"calls/sec × 60 × peak", sub:`${callsSec.toFixed(4)} × 60 × ${peak}`, value:fmt(peakRPM)},
+    {name:"Concurrency (Little's Law)", formula:"L = calls/sec × step_latency", sub:`${callsSec.toFixed(4)} × ${stepLat.toFixed(2)}s`, value:fmt(concurrency,2)},
+    {name:"Retry amplification", formula:"1 + retry_rate × avg_retries", sub:`1 + ${retry} × ${retries}`, value:effLoad.toFixed(3)+"×"},
+  ];
+  return {tokensPerTask,total,costPerTask,savings,costUser,costMonth,tasksDay,inputCost,outputCost,
+    avgITPM,avgOTPM,avgRPM,peakITPM,peakOTPM,peakRPM,stepLat,taskLat,concurrency,effLoad,tier,fits,minTier,effCalls,eqs};
+}
+function agenticHTML(r){
+  const tierPill=r.fits?`<span class="pill ok">fits ${r.tier.name}</span>`:`<span class="pill bad">exceeds ${r.tier.name}</span>`;
+  const minPill=r.minTier?`<span class="pill ${r.fits?'ok':'warn'}">min: ${r.minTier}</span>`:`<span class="pill bad">exceeds all tiers</span>`;
+  return `<div class="card"><div class="subhead"><h2>Workload &amp; cost</h2></div>
+    <div class="metrics">
+      ${metric("Tokens / task",fmt(r.tokensPerTask),`${fmt(r.total.input)} in / ${fmt(r.total.output)} out`,"big")}
+      ${metric("Cost / task",money(r.costPerTask),r.savings>0?`${Math.round(r.savings*100)}% saved`:"")}
+      ${metric("Cost / user / mo",money(r.costUser))}
+      ${metric("Monthly cost",money(r.costMonth),`${fmt(r.tasksDay)} tasks/day`,"big")}</div>
+    <div class="note" style="margin-top:12px">Per-task cost split (before batch): ${stackBar([{label:"Input",value:r.inputCost,color:C[0],disp:money(r.inputCost)},{label:"Output",value:r.outputCost,color:C[1],disp:money(r.outputCost)}])}</div></div>
+    <div class="card"><div class="subhead"><h2>Capacity vs rate limits</h2> ${tierPill} ${minPill}</div>
+    <div class="scroll"><table><tr><th>Metric</th><th class="num">Average</th><th class="num">Peak</th><th class="num">${r.tier.name} limit</th></tr>
+      <tr><td>ITPM (uncached)</td><td class="num">${fmt(r.avgITPM)}</td><td class="num">${fmt(r.peakITPM)}</td><td class="num">${fmt(r.tier.itpm)}</td></tr>
+      <tr><td>OTPM (output)</td><td class="num">${fmt(r.avgOTPM)}</td><td class="num">${fmt(r.peakOTPM)}</td><td class="num">${fmt(r.tier.otpm)}</td></tr>
+      <tr><td>RPM (requests)</td><td class="num">${fmt(r.avgRPM)}</td><td class="num">${fmt(r.peakRPM)}</td><td class="num">${fmt(r.tier.rpm)}</td></tr></table></div>
+    <div class="metrics" style="margin-top:12px">
+      ${metric("Concurrency",fmt(r.concurrency,1),"in-flight (L=λW)")}
+      ${metric("Step latency",r.stepLat.toFixed(2)+"s")}
+      ${metric("Task latency",r.taskLat.toFixed(1)+"s",`${r.effCalls} calls`)}
+      ${metric("Retry amplification",r.effLoad.toFixed(2)+"×")}</div>
+    <p class="note">ITPM is uncached input — caching raises effective headroom by 1/(1−cache_hit).</p></div>`;
+}
+
+/* ============================ compute: rag ============================ */
+function computeRAG(){
+  const docs=num("rg_docs"), tokdoc=num("rg_tokdoc"), chunk=num("rg_chunk");
+  const overlap=Math.min(95,Math.max(0,num("rg_overlap")))/100*chunk, dims=num("rg_dims"), embPrice=num("rg_embprice");
+  const idx=INDEXES[str("rg_index")]||INDEXES.hnsw, mult=idx.mult, qbytes=(QUANT[str("rg_quant")]||QUANT.fp32).bytes;
+  const repl=num("rg_repl")||1, meta=num("rg_meta")/100, qmonth=num("rg_qmonth"), topk=num("rg_topk");
+  const sysq=num("rg_sys"), genout=num("rg_genout"), genin=num("rg_genin"), genoutp=num("rg_genoutp");
+  const write=num("rg_write")||1, embtps=num("rg_embtps")||1;
+  const totalTokens=docs*tokdoc, denom=Math.max(1,chunk-overlap);
+  const chunks=totalTokens>chunk?ceil((totalTokens-chunk)/denom)+1:(totalTokens>0?docs:0), vectors=chunks;
+  const rawFp32=vectors*dims*4, rawStored=vectors*dims*qbytes, indexRAM=rawFp32*mult, metaBytes=indexRAM*meta;
+  const totalRAM=(indexRAM+metaBytes)*repl, chunkText=vectors*chunk*4, sourceDocs=totalTokens*4, totalStorage=totalRAM+chunkText+sourceDocs+rawStored;
+  const embedCost=totalTokens*embPrice/1e6, embedHrs=totalTokens/embtps/3600, ingestHrs=vectors/write/3600;
+  const perQueryInput=sysq+topk*chunk, costPerQuery=(perQueryInput*genin+genout*genoutp)/1e6, monthlyGen=qmonth*costPerQuery;
+  const toGB=b=>b/1e9;
+  const eqs=[
+    {name:"# chunks / vectors", formula:"ceil((total − chunk)/(chunk − overlap)) + 1", sub:`ceil((${fmt(totalTokens)} − ${chunk})/(${chunk} − ${fmt(overlap)})) + 1`, value:fmt(vectors)},
+    {name:"Raw vectors (fp32)", formula:"vectors × dims × 4 B", sub:`${fmt(vectors)} × ${dims} × 4`, value:gb(toGB(rawFp32))},
+    {name:"Index RAM", formula:"raw_fp32 × index_multiplier", sub:`${gb(toGB(rawFp32))} × ${mult} (${idx.label})`, value:gb(toGB(indexRAM))},
+    {name:"Searchable RAM", formula:"(index + metadata) × replication", sub:`(${gb(toGB(indexRAM))} + ${gb(toGB(metaBytes))}) × ${repl}`, value:gb(toGB(totalRAM))},
+    {name:"Total storage", formula:"RAM + chunk_text + source_docs + raw_stored", sub:`${gb(toGB(totalRAM))} + ${gb(toGB(chunkText))} + ${gb(toGB(sourceDocs))} + ${gb(toGB(rawStored))}`, value:gb(toGB(totalStorage))},
+    {name:"Embedding cost (one-time)", formula:"total_tokens × emb$/1e6", sub:`${fmt(totalTokens)} × $${embPrice}/1e6`, value:money(embedCost)},
+    {name:"Per-query input", formula:"system+query + top_k × chunk", sub:`${sysq} + ${topk} × ${chunk}`, value:fmt(perQueryInput)+" tok"},
+    {name:"Cost / query", formula:"(input×gen_in$ + output×gen_out$)/1e6", sub:`(${fmt(perQueryInput)}×$${genin} + ${genout}×$${genoutp})/1e6`, value:money(costPerQuery)},
+    {name:"Monthly generation cost", formula:"queries/month × cost/query", sub:`${fmt(qmonth)} × ${money(costPerQuery)}`, value:money(monthlyGen)},
+  ];
+  return {totalTokens,chunks,vectors,rawFp32,indexRAM,metaBytes,totalRAM,chunkText,sourceDocs,totalStorage,embedCost,embedHrs,ingestHrs,perQueryInput,costPerQuery,monthlyGen,idx,eqs};
+}
+function ragHTML(r){ const toGB=b=>b/1e9;
+  return `<div class="card"><div class="subhead"><h2>Index &amp; storage</h2></div>
+    <div class="metrics">
+      ${metric("Vectors",fmt(r.vectors),`from ${fmt(r.chunks)} chunks`,"big")}
+      ${metric("Searchable RAM",gb(toGB(r.totalRAM)),r.idx.label)}
+      ${metric("Total storage",gb(toGB(r.totalStorage)),"","big")}
+      ${metric("Embedding (one-time)",money(r.embedCost),`${r.embedHrs.toFixed(1)} h`)}</div>
+    <div class="note" style="margin-top:12px">Storage breakdown: ${stackBar([{label:"Index RAM",value:r.indexRAM,color:C[0],disp:gb(toGB(r.indexRAM))},{label:"Metadata",value:r.metaBytes,color:C[2],disp:gb(toGB(r.metaBytes))},{label:"Chunk text",value:r.chunkText,color:C[1],disp:gb(toGB(r.chunkText))},{label:"Source docs",value:r.sourceDocs,color:C[4],disp:gb(toGB(r.sourceDocs))}])}</div>
+    <div class="note">Ingestion ≈ ${r.ingestHrs.toFixed(1)} h at the configured write rate.</div></div>
+    <div class="card"><div class="subhead"><h2>Query economics</h2></div>
+    <div class="metrics">
+      ${metric("Input / query",fmt(r.perQueryInput),"tokens assembled")}
+      ${metric("Cost / query",money(r.costPerQuery))}
+      ${metric("Monthly gen cost",money(r.monthlyGen),"","big")}</div>
+    <p class="note">top-k and chunk size dominate generation cost: each extra chunk adds ≈ chunk_size input tokens to every query.</p></div>`;
+}
+
+/* ============================ compute: gpu ============================ */
+function computeGPU(){
+  const params=num("gp_params"), bpp=(PREC[str("gp_prec")]||PREC.fp16).bytes, layers=num("gp_layers"), kv=num("gp_kv"), hd=num("gp_headdim");
+  const vram=num("gp_vram")||1, bw=num("gp_bw")||1, seq=num("gp_seq"), batch=num("gp_batch")||1, tmult=num("gp_tmult")||1;
+  const qps=num("gp_qps"), avgout=num("gp_avgout")||1, rho=Math.min(0.99,Math.max(0.05,num("gp_rho"))), cost=num("gp_cost"), api=num("gp_api"), headroom=num("as_headroom")/100;
+  const weightsGB=params*bpp, kvPerReqGB=(2*layers*kv*hd*seq*bpp)/1e9, kvTotalGB=kvPerReqGB*batch, activGB=0.05*weightsGB;
+  const totalVRAM=(weightsGB+kvTotalGB+activGB)*1.2+1.5, gpusPerReplica=ceil(totalVRAM/vram);
+  const tpsBase=bw/Math.max(weightsGB,0.001), tps=tpsBase*tmult, serviceRate=tps/avgout;
+  const replicas=qps>0?ceil((qps/serviceRate)/rho*(1+headroom)):0, serviceTime=avgout/tps, concurrency=qps*serviceTime;
+  const utilTps=tps*rho, selfCostPer1M=utilTps>0?(cost*gpusPerReplica)/(utilTps*3600)*1e6:Infinity, cheaper=selfCostPer1M<api;
+  const totalGPUs=gpusPerReplica*replicas, monthlyHW=totalGPUs*cost*730;
+  const eqs=[
+    {name:"Weights VRAM", formula:"params(B) × bytes/param", sub:`${params} × ${bpp}`, value:gb(weightsGB)},
+    {name:"KV cache / request", formula:"2 × layers × kv_heads × head_dim × seq × bytes", sub:`2×${layers}×${kv}×${hd}×${fmt(seq)}×${bpp}`, value:gb(kvPerReqGB)},
+    {name:"KV cache (batch)", formula:"kv/req × batch", sub:`${gb(kvPerReqGB)} × ${batch}`, value:gb(kvTotalGB)},
+    {name:"Total VRAM", formula:"(weights + KV + activations) × 1.2 + 1.5 GB", sub:`(${gb(weightsGB)} + ${gb(kvTotalGB)} + ${gb(activGB)})×1.2 + 1.5`, value:gb(totalVRAM)},
+    {name:"GPUs / replica", formula:"ceil(total_VRAM / GPU_VRAM)", sub:`ceil(${gb(totalVRAM)} / ${vram} GB)`, value:fmt(gpusPerReplica)},
+    {name:"Throughput / replica", formula:"(bandwidth / weights_GB) × batching×", sub:`(${fmt(bw)} / ${gb(weightsGB)}) × ${tmult}`, value:fmt(tps)+" tok/s"},
+    {name:"Replicas for QPS", formula:"ceil((QPS/service_rate)/ρ × (1+headroom))", sub:`ceil((${qps}/${serviceRate.toFixed(2)})/${rho}×${(1+headroom).toFixed(2)})`, value:fmt(replicas)},
+    {name:"Concurrency (Little's Law)", formula:"L = QPS × service_time", sub:`${qps} × ${serviceTime.toFixed(3)}s`, value:fmt(concurrency,2)},
+    {name:"Self-host $/1M tok", formula:"GPU$/hr × GPUs / (tok/s × ρ × 3600) × 1e6", sub:`$${cost}×${gpusPerReplica} / (${fmt(tps)}×${rho}×3600)×1e6`, value:money(selfCostPer1M)},
+  ];
+  return {weightsGB,kvPerReqGB,kvTotalGB,totalVRAM,gpusPerReplica,tps,replicas,concurrency,selfCostPer1M,cheaper,api,totalGPUs,monthlyHW,rho,eqs};
+}
+function gpuHTML(r){
+  const cmp=r.cheaper?`<span class="pill ok">self-host cheaper</span>`:`<span class="pill warn">API cheaper</span>`;
+  return `<div class="card"><div class="subhead"><h2>Memory &amp; fit</h2></div>
+    <div class="metrics">
+      ${metric("Total VRAM",gb(r.totalVRAM),"per replica","big")}
+      ${metric("GPUs / replica",fmt(r.gpusPerReplica),"tensor-parallel")}
+      ${metric("KV cache",gb(r.kvTotalGB),"at batch")}
+      ${metric("Weights",gb(r.weightsGB))}</div>
+    <div class="note" style="margin-top:12px">VRAM breakdown: ${stackBar([{label:"Weights",value:r.weightsGB,color:C[0],disp:gb(r.weightsGB)},{label:"KV cache",value:r.kvTotalGB,color:C[2],disp:gb(r.kvTotalGB)},{label:"Overhead",value:Math.max(0,r.totalVRAM-r.weightsGB-r.kvTotalGB),color:C[3],disp:gb(Math.max(0,r.totalVRAM-r.weightsGB-r.kvTotalGB))}])}</div></div>
+    <div class="card"><div class="subhead"><h2>Throughput, fleet &amp; economics</h2> ${cmp}</div>
+    <div class="metrics">
+      ${metric("Throughput",fmt(r.tps)+" tok/s","per replica")}
+      ${metric("Replicas",fmt(r.replicas),`@ ρ=${r.rho}`)}
+      ${metric("Total GPUs",fmt(r.totalGPUs),`≈ ${money(r.monthlyHW)}/mo`,"big")}
+      ${metric("Self-host $/1M",money(r.selfCostPer1M),`API ${money(r.api)}`)}
+      ${metric("Concurrency",fmt(r.concurrency,1),"in-flight")}</div>
+    <p class="note">Keep ρ ≤ 0.7–0.8: wait time grows ~1/(1−ρ), so the last 20% of utilization costs the most latency.</p></div>`;
+}
+
+/* ============================ compute: traditional ============================ */
+function computeTrad(){
+  const users=num("td_users"), rpu=num("td_reqPerUser"), peak=num("td_peak")||1, respKb=num("td_respKb"), reqKb=num("td_reqKb"), lat=num("td_latency");
+  const rpsServer=num("td_rpsPerServer")||1, util=Math.min(0.99,Math.max(0.05,num("td_util"))), redun=num("td_redundancy");
+  const initGb=num("td_initGb"), newDay=num("td_newPerDay"), bRec=num("td_bytesRec"), years=num("td_retentionYears"), repl=num("td_replication")||1;
+  const cacheFrac=num("td_cacheFrac")/100, cacheHit=num("td_cacheHit")/100;
+  const writeRatio=num("td_writeRatio")/100, wIops=num("td_writeIops"), rIops=num("td_readIops"), replicaQps=num("td_dbReplicaQps")||1;
+  const cSrv=num("td_costServer"), cDb=num("td_costDb"), cCache=num("td_costCacheGb"), cStore=num("td_costStoreGb"), cEgr=num("td_costEgressGb");
+
+  const reqDay=users*rpu, avgRps=reqDay/86400, peakRps=avgRps*peak, concurrency=peakRps*lat;
+  const appBase=ceil(peakRps/(rpsServer*util)), appServers=ceil(appBase*(1+redun));
+  const egressMbps=peakRps*respKb*1024*8/1e6, ingressMbps=peakRps*reqKb*1024*8/1e6;
+  const monthlyEgressGB=reqDay*respKb/1048576*30;
+  const growthYrGB=newDay*bRec*365/1e9, projRawGB=initGb+growthYrGB*years, projReplGB=projRawGB*repl;
+  const cacheGB=projRawGB*cacheFrac;
+  const writeQps=peakRps*writeRatio, readQps=peakRps*(1-writeRatio), readUncached=readQps*(1-cacheHit);
+  const dbIops=writeQps*wIops+readUncached*rIops, readReplicas=ceil(readUncached/replicaQps), dbNodes=1+readReplicas;
+  const monthlyCost=appServers*cSrv+dbNodes*cDb+cacheGB*cCache+projReplGB*cStore+monthlyEgressGB*cEgr;
+  const eqs=[
+    {name:"Peak RPS", formula:"users × req/user/day / 86400 × peak", sub:`${fmt(users)} × ${rpu} / 86400 × ${peak}`, value:fmt(peakRps,1)},
+    {name:"Concurrency (Little's Law)", formula:"L = peak_RPS × avg_processing_time", sub:`${fmt(peakRps,1)} × ${lat}s`, value:fmt(concurrency,1)},
+    {name:"App instances", formula:"ceil(peak_RPS / (RPS_per_instance × util)) × (1+redundancy)", sub:`ceil(${fmt(peakRps,1)}/(${rpsServer}×${util})) × ${(1+redun).toFixed(2)} = ${appBase}×${(1+redun).toFixed(2)}`, value:fmt(appServers)},
+    {name:"Egress bandwidth (peak)", formula:"peak_RPS × resp_KB × 1024 × 8 / 1e6", sub:`${fmt(peakRps,1)} × ${respKb}KB`, value:fmt(egressMbps,1)+" Mbps"},
+    {name:"Monthly egress", formula:"req/day × resp_KB / 1,048,576 × 30", sub:`${fmt(reqDay)} × ${respKb}KB × 30`, value:fmt(monthlyEgressGB)+" GB"},
+    {name:"Storage growth / yr", formula:"new/day × bytes/record × 365", sub:`${fmt(newDay)} × ${bRec} × 365`, value:gb(growthYrGB)},
+    {name:"Projected storage", formula:"(initial + growth×years) × replication", sub:`(${gb(initGb)} + ${gb(growthYrGB)}×${years}) × ${repl}`, value:gb(projReplGB)},
+    {name:"Cache RAM (working set)", formula:"projected_raw × hot_fraction", sub:`${gb(projRawGB)} × ${(cacheFrac*100).toFixed(0)}%`, value:gb(cacheGB)},
+    {name:"DB read/write QPS", formula:"peak_RPS split; reads × (1−cache_hit) hit the DB", sub:`W ${fmt(writeQps,1)} · R ${fmt(readQps,1)} (uncached ${fmt(readUncached,1)})`, value:`${fmt(dbIops,0)} IOPS`},
+    {name:"DB nodes", formula:"1 primary + ceil(uncached_read_QPS / replica_QPS)", sub:`1 + ceil(${fmt(readUncached,1)}/${replicaQps})`, value:fmt(dbNodes)},
+    {name:"Monthly infra cost", formula:"apps + db + cache + storage + egress", sub:`${appServers}×$${cSrv} + ${dbNodes}×$${cDb} + ${fmt(cacheGB)}GB×$${cCache} + ${fmt(projReplGB)}GB×$${cStore} + ${fmt(monthlyEgressGB)}GB×$${cEgr}`, value:money(monthlyCost)},
+  ];
+  return {peakRps,avgRps,concurrency,appServers,appBase,egressMbps,ingressMbps,monthlyEgressGB,growthYrGB,projRawGB,projReplGB,cacheGB,writeQps,readQps,readUncached,dbIops,readReplicas,dbNodes,monthlyCost,eqs};
+}
+function tradHTML(r){
+  return `<div class="card"><div class="subhead"><h2>Traffic &amp; compute</h2></div>
+    <div class="metrics">
+      ${metric("Peak RPS",fmt(r.peakRps,1),`avg ${fmt(r.avgRps,1)}`,"big")}
+      ${metric("App instances",fmt(r.appServers),`base ${fmt(r.appBase)} + HA`)}
+      ${metric("Concurrency",fmt(r.concurrency,1),"in-flight (L=λW)")}
+      ${metric("Egress / ingress",fmt(r.egressMbps,0)+" Mbps",`${fmt(r.ingressMbps,0)} Mbps in`)}</div></div>
+    <div class="card"><div class="subhead"><h2>Data, database &amp; cost</h2></div>
+    <div class="metrics">
+      ${metric("Projected storage",gb(r.projReplGB),`raw ${gb(r.projRawGB)}`,"big")}
+      ${metric("Cache RAM",gb(r.cacheGB),"working set")}
+      ${metric("DB IOPS",fmt(r.dbIops,0),`W ${fmt(r.writeQps,1)} / R ${fmt(r.readQps,1)} qps`)}
+      ${metric("DB nodes",fmt(r.dbNodes),`1 primary + ${fmt(r.readReplicas)} replica`)}
+      ${metric("Monthly egress",fmt(r.monthlyEgressGB)+" GB")}
+      ${metric("Monthly infra cost",money(r.monthlyCost),"","big")}</div>
+    <p class="note">Estimates — set the unit costs to your provider's prices. Reads that miss the cache (1−hit ratio) are what actually size the database.</p></div>`;
+}
+
+/* ============================ registry ============================ */
+const MOD = {
+  agentic:{label:"Agentic LLM app", icon:"🤖", blurb:"Autonomous agents that call an LLM in a loop with tools. Sizes tokens, rate-limit tier, and $/task · $/user · $/month.", compute:computeAgentic, html:agenticHTML},
+  rag:{label:"RAG application", icon:"📚", blurb:"Retrieval over a vector database, then generation. Sizes vectors, RAM/storage, embedding cost, and per-query generation cost.", compute:computeRAG, html:ragHTML},
+  gpu:{label:"Self-hosted LLM (GPU)", icon:"⚙️", blurb:"Run a model on your own GPUs. Sizes VRAM, throughput, replicas for a target QPS, and self-host vs API breakeven.", compute:computeGPU, html:gpuHTML},
+  trad:{label:"Traditional application", icon:"🖥️", blurb:"Classic web/app/API + database + cache. Sizes servers, bandwidth, storage growth, DB IOPS/replicas, and monthly cost.", compute:computeTrad, html:tradHTML},
+};
+
+/* ============================ wizard ============================ */
+const WIZ = {
+  agentic:[
+    {title:"Choose your model", guide:"Pick the LLM you'll run on. Prices pre-fill and stay editable — output tokens are priced ~5× input, so they usually dominate an agent's bill.", groups:["agentic-model"]},
+    {title:"Demand", guide:"How many users, and how many tasks each starts per day. This becomes your request and token rate.", groups:["agentic-demand"]},
+    {title:"Per-call token model", guide:"Model one call: the system prompt + tool definitions are re-sent every call; tool outputs are the observations fed back. With context growth ON, history accumulates each step (cost grows ~N²).", groups:["agentic-tokens"]},
+    {title:"Agent loop & multi-agent", guide:"How many model calls one task takes. Multi-agent fan-out multiplies tokens — Anthropic measured ~15× vs a single chat.", groups:["agentic-loop"]},
+    {title:"Caching, batch & limits", guide:"Prompt caching cuts repeated-prefix cost (~0.1×) and raises effective ITPM. Batch API is 50% off for non-real-time work. Pick a tier to check peak load against.", groups:["agentic-cost"]},
+  ],
+  rag:[
+    {title:"Choose your models", guide:"Pick an embedding model (sets vector dimensions) and the generation model. Both prices stay editable.", groups:["rag-models"]},
+    {title:"Corpus & chunking", guide:"Your document volume and how you split it. Smaller chunks + overlap = more vectors (more recall, more storage).", groups:["rag-corpus"]},
+    {title:"Index & storage", guide:"The ANN index sets the memory multiplier over raw vectors (HNSW ~1.8×; quantized indexes shrink it). Replication and metadata add on top.", groups:["rag-index"]},
+    {title:"Query path & generation", guide:"Query volume and how much retrieved context you feed the model. top-k × chunk size drives per-query generation cost.", groups:["rag-query"]},
+  ],
+  gpu:[
+    {title:"Choose your model", guide:"Pick the model and precision. FP16 ≈ 2 GB per billion params; INT4 ≈ 0.5 GB/B. Fewer KV heads (GQA) shrink the KV cache.", groups:["gpu-model"]},
+    {title:"Hardware & serving", guide:"Pick the GPU and the serving config. Context length × batch size drive KV-cache memory, which often decides how many GPUs you need.", groups:["gpu-hw"]},
+    {title:"Load & economics", guide:"Your target throughput and the utilization you'll run at (keep ρ ≤ 0.7). The breakeven compares self-host $/1M tokens against an API price.", groups:["gpu-load"]},
+  ],
+  trad:[
+    {title:"Traffic", guide:"Users and requests/day become your request rate. Always size for peak, not average — set a realistic peak-to-average ratio.", groups:["trad-traffic"]},
+    {title:"Compute / app servers", guide:"How much one instance handles and the utilization you target. Redundancy adds capacity so a failure doesn't take you down (N+1).", groups:["trad-compute"]},
+    {title:"Data & storage growth", guide:"Project storage forward: new records/day × size × horizon, times your replication factor.", groups:["trad-data"]},
+    {title:"Caching", guide:"A cache absorbs hot reads. The hit ratio decides how much read traffic actually reaches the database.", groups:["trad-cache"]},
+    {title:"Database", guide:"Split traffic into writes and (cache-missed) reads to size IOPS and read replicas.", groups:["trad-db"]},
+    {title:"Unit costs", guide:"Set per-unit monthly prices for your provider to get a rough monthly infrastructure cost.", groups:["trad-cost"]},
+  ],
+};
+let wiz = {type:null, idx:0};
+function renderWizard(){
+  const c=$("wizContent");
+  if(!wiz.type){ c.innerHTML = startHTML(); return; }
+  const steps=WIZ[wiz.type];
+  if(wiz.idx>=steps.length){ c.innerHTML = summaryHTML(); return; }
+  const s=steps[wiz.idx], total=steps.length;
+  c.innerHTML = `
+    <div class="wizbar">
+      <button id="wizExit">← Change type</button>
+      <div class="progress"><i style="width:${(wiz.idx)/total*100}%"></i></div>
+      <div class="stepmeta">${MOD[wiz.type].icon} ${esc(MOD[wiz.type].label)} · Step ${wiz.idx+1} of ${total}</div>
+    </div>
+    <div class="stepcard">
+      <h2>${esc(s.title)}</h2>
+      <div class="guide">${esc(s.guide)}</div>
+      <div class="grid">${s.groups.map(groupHTML).join("")}</div>
+      <div class="nav">
+        <button id="wizBack">${wiz.idx===0?"← Back":"← Previous"}</button>
+        <button class="primary" id="wizNext">${wiz.idx===total-1?"See summary →":"Next →"}</button>
+      </div>
+    </div>`;
+}
+function startHTML(){
+  const cards=Object.entries(MOD).map(([k,m])=>`<button class="typecard" data-type="${k}"><div class="ic">${m.icon}</div><h2>${esc(m.label)}</h2><p>${esc(m.blurb)}</p></button>`).join("");
+  const examples=[["saas","Agentic SaaS"],["rag","Enterprise RAG"],["selfhost","Self-host 70B"],["webapp","Web app (10k RPS)"]]
+    .map(([s,l])=>`<button data-example="${s}">${esc(l)}</button>`).join("");
+  return `<div class="stepcard">
+    <h2>What are you sizing?</h2>
+    <div class="guide">Capacity planning in four moves: model one unit of work → turn demand into peak rates → size capacity with headroom → cost it. Pick a system type to start a short guided wizard; you'll get a summary you can turn into a printable report. Everything is editable, and you can switch to <b>Expert</b> mode anytime for the full control panel.</div>
+    <div class="typegrid">${cards}</div>
+    <p class="note" style="margin-top:14px">Or load an example and jump straight to the summary:</p>
+    <div class="toolbar">${examples}</div>
+  </div>`;
+}
+function summaryHTML(){
+  const m=MOD[wiz.type], r=m.compute();
+  return `<div class="wizbar">
+      <button id="wizExit">← Change type</button>
+      <div class="progress"><i style="width:100%"></i></div>
+      <div class="stepmeta">${m.icon} ${esc(m.label)} · Summary</div>
+    </div>
+    <div class="stepcard">
+      <div class="subhead"><h2>Summary — ${esc(m.label)}</h2><span class="pill ok">complete</span></div>
+      <div class="guide">Here's your sizing. Size for the <b>peak</b> figures, keep headroom, and treat defaults as starting points to validate. Open the full report for the assumptions, the equations with your numbers, and a glossary.</div>
+      <div id="wizSummaryBody">${m.html(r)}</div>
+      <div class="nav">
+        <button id="wizBack">← Edit inputs</button>
+        <div class="toolbar">
+          <button id="wizReport" class="primary">View full report →</button>
+          <button id="wizExpert">Open in Expert mode</button>
+          <button id="wizRestart">Start over</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ============================ expert ============================ */
+let MODE="wizard";
+function mountExpertForms(){
+  for(const mod in SECTIONS){
+    $("forms-"+mod).innerHTML = SECTIONS[mod].map(g=>`<div class="card"><h3>${esc(GROUPS[g])}</h3><div class="grid">${groupHTML(g)}</div></div>`).join("");
+  }
+  $("forms-assume").innerHTML = groupHTML("assume");
+  $("forms-report").innerHTML = groupHTML("report");
+}
+function unmountExpertForms(){ ["agentic","rag","gpu","trad"].forEach(m=>$("forms-"+m).innerHTML=""); $("forms-assume").innerHTML=""; $("forms-report").innerHTML=""; }
+function renderExpertOut(){ for(const mod in MOD){ const el=$("out-"+mod); if(el) el.innerHTML = MOD[mod].html(MOD[mod].compute()); } }
+function mountRef(){
+  let rows=`<tr><th>Model</th><th class="num">Input $/1M</th><th class="num">Output $/1M</th><th class="num">Context</th></tr>`;
+  for(const [k,v] of Object.entries(MODELS)){ if(k==="custom")continue; rows+=`<tr><td>${esc(v.label)}</td><td class="num">$${v.in}</td><td class="num">$${v.out}</td><td class="num">${fmt(v.ctx)}</td></tr>`; }
+  rows+=`<tr><th>Embedding</th><th class="num">Dims</th><th class="num">$/1M</th><th></th></tr>`;
+  for(const [k,v] of Object.entries(EMB)){ if(k==="custom")continue; rows+=`<tr><td>${esc(v.label)}</td><td class="num">${v.dims}</td><td class="num">$${v.price}</td><td></td></tr>`; }
+  rows+=`<tr><th>GPU</th><th class="num">VRAM</th><th class="num">BW GB/s</th><th class="num">$/hr</th></tr>`;
+  for(const [k,v] of Object.entries(GPUS)){ if(k==="custom")continue; rows+=`<tr><td>${esc(v.label)}</td><td class="num">${v.vram} GB</td><td class="num">${fmt(v.bw)}</td><td class="num">$${v.cost}</td></tr>`; }
+  rows+=`<tr><th>Index multiplier</th><th class="num" colspan="3"></th></tr>`;
+  for(const [k,v] of Object.entries(INDEXES)) rows+=`<tr><td>${esc(v.label)}</td><td class="num" colspan="3">×${v.mult} (vs fp32 raw)</td></tr>`;
+  $("refTable").innerHTML=rows;
+}
+function wireTabs(){
+  document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{
+    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+    document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active"));
+    t.classList.add("active"); $("panel-"+t.dataset.tab).classList.add("active");
+  }));
+}
+function gotoTab(name){ document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("active",x.dataset.tab===name));
+  document.querySelectorAll(".panel").forEach(x=>x.classList.remove("active")); $("panel-"+name).classList.add("active"); }
+function setMode(m){
+  MODE=m;
+  document.querySelectorAll("#modeToggle button").forEach(b=>b.classList.toggle("on",b.dataset.mode===m));
+  if(m==="expert"){ $("wizard").style.display="none"; $("wizContent").innerHTML=""; $("expert").style.display="block"; mountExpertForms(); renderExpertOut(); }
+  else { $("expert").style.display="none"; unmountExpertForms(); $("wizard").style.display="block"; renderWizard(); }
+}
+
+/* ============================ presets, scenarios, state ============================ */
+function applyPreset(id){
+  if(id==="ag_model"){ const v=MODELS[STORE.ag_model]; if(v){ setVal("ag_in",v.in); setVal("ag_out",v.out); } }
+  else if(id==="rg_emb"){ const v=EMB[STORE.rg_emb]; if(v){ setVal("rg_dims",v.dims); setVal("rg_embprice",v.price); } }
+  else if(id==="rg_genmodel"){ const v=MODELS[STORE.rg_genmodel]; if(v){ setVal("rg_genin",v.in); setVal("rg_genoutp",v.out); } }
+  else if(id==="gp_model"){ const v=LLMS[STORE.gp_model]; if(v){ setVal("gp_params",v.paramsB); setVal("gp_layers",v.layers); setVal("gp_kv",v.kvHeads); setVal("gp_headdim",v.headDim); } }
+  else if(id==="gp_gpu"){ const v=GPUS[STORE.gp_gpu]; if(v){ setVal("gp_vram",v.vram); setVal("gp_bw",v.bw); setVal("gp_cost",v.cost); } }
+}
+const SCEN = {
+  saas:{type:"agentic",vals:{ag_dau:5000,ag_tasksPerUser:2,ag_calls:4,ag_system:2000,ag_tools:1000,ag_user:300,ag_toolout:1500,ag_output:500,ag_growth:true,ag_multi:false,ag_model:"claude-sonnet-4-6",ag_in:3,ag_out:15,ag_cache:0,ag_batch:0,ag_peak:3,ag_retry:2,ag_tier:"t2"}},
+  rag:{type:"rag",vals:{rg_docs:5000000,rg_tokdoc:1500,rg_chunk:1024,rg_overlap:10,rg_emb:"oai-3-small",rg_dims:1536,rg_embprice:0.02,rg_index:"hnsw",rg_quant:"fp32",rg_repl:2,rg_meta:50,rg_qmonth:9000000,rg_qps:100,rg_topk:5,rg_sys:1100,rg_genout:500,rg_genmodel:"claude-sonnet-4-6",rg_genin:3,rg_genoutp:15}},
+  selfhost:{type:"gpu",vals:{gp_model:"llama-70b",gp_params:70,gp_prec:"fp16",gp_layers:80,gp_kv:8,gp_headdim:128,gp_gpu:"h100",gp_vram:80,gp_bw:3350,gp_seq:8192,gp_batch:8,gp_tmult:4,gp_qps:50,gp_avgout:500,gp_rho:0.7,gp_cost:3.0,gp_api:9.0}},
+  webapp:{type:"trad",vals:{td_users:500000,td_reqPerUser:40,td_peak:4,td_respKb:40,td_reqKb:2,td_latency:0.08,td_rpsPerServer:250,td_util:0.6,td_redundancy:0.5,td_initGb:1000,td_newPerDay:20000000,td_bytesRec:800,td_retentionYears:3,td_replication:3,td_cacheFrac:15,td_cacheHit:85,td_writeRatio:15,td_writeIops:3,td_readIops:1,td_dbReplicaQps:8000,td_costServer:60,td_costDb:300,td_costCacheGb:8,td_costStoreGb:0.08,td_costEgressGb:0.05}},
+};
+function applyScenario(name){ const s=SCEN[name]; if(!s) return; for(const [k,v] of Object.entries(s.vals)) setVal(k,v); }
+function loadExample(name){ const s=SCEN[name]; if(!s) return; applyScenario(name); wiz={type:s.type, idx:WIZ[s.type].length}; renderWizard(); }
+
+function collectState(){ return {__mode:MODE,__type:wiz.type,...STORE}; }
+function applyStateObj(o){ for(const k in o){ if(k.startsWith("__")) continue; setVal(k,o[k]); } }
+let saveTimer=null;
+function saveHash(){ try{ location.replace("#"+btoa(encodeURIComponent(JSON.stringify(collectState())))); }catch(e){} }
+function loadHash(){ if(!location.hash) return false; try{ const o=JSON.parse(decodeURIComponent(atob(location.hash.slice(1)))); applyStateObj(o); if(o.__type&&WIZ[o.__type]) wiz.type=o.__type; return true; }catch(e){ return false; } }
+
+/* ============================ report ============================ */
+function eqTable(eqs){ let rows=`<tr><th>Quantity</th><th>Formula</th><th>With your numbers</th><th class="num">Result</th></tr>`;
+  for(const e of eqs) rows+=`<tr><td>${esc(e.name)}</td><td><code>${esc(e.formula)}</code></td><td class="eq">${esc(e.sub)}</td><td class="num eq"><span class="v">${esc(e.value)}</span></td></tr>`;
+  return `<div class="scroll"><table>${rows}</table></div>`; }
+function assumeTable(groups){ let rows=`<tr><th>Input</th><th class="num">Value</th></tr>`;
+  for(const g of groups) for(const f of F[g]){ let v=STORE[f.id];
+    if(f.type==="check") v=v?"yes":"no"; else if(f.type==="select"&&f.options[v]) v=f.options[v].label;
+    rows+=`<tr><td>${esc(f.label)}</td><td class="num">${esc(v)}</td></tr>`; }
+  return `<div class="scroll"><table>${rows}</table></div>`; }
+function glossaryHTML(){ return `<div class="scroll"><table>${Object.entries(GLOSSARY).map(([k,v])=>`<tr><td style="white-space:nowrap"><b>${esc(k)}</b></td><td>${esc(v)}</td></tr>`).join("")}</table></div>`; }
+const REPORT_DEFS = {
+  agentic:{n:"Agentic API", c:computeAgentic, groups:SECTIONS.agentic, results:r=>[["Tokens / task",fmt(r.tokensPerTask)],["Cost / task",money(r.costPerTask)],["Cost / user / month",money(r.costUser)],["Monthly cost",money(r.costMonth)],["Caching/batch savings",Math.round(r.savings*100)+"%"],["Peak ITPM / OTPM / RPM",`${fmt(r.peakITPM)} / ${fmt(r.peakOTPM)} / ${fmt(r.peakRPM)}`],["Fits "+r.tier.name+"?",(r.fits?"yes":"no")+" (min "+(r.minTier||"—")+")"],["Concurrency / step / task lat",`${fmt(r.concurrency,1)} / ${r.stepLat.toFixed(2)}s / ${r.taskLat.toFixed(1)}s`]]},
+  rag:{n:"RAG", c:computeRAG, groups:SECTIONS.rag, results:r=>[["Chunks / vectors",fmt(r.vectors)],["Searchable RAM",gb(r.totalRAM/1e9)],["Total storage",gb(r.totalStorage/1e9)],["Embedding (one-time)",money(r.embedCost)+" · "+r.embedHrs.toFixed(1)+" h"],["Input / query",fmt(r.perQueryInput)+" tok"],["Cost / query",money(r.costPerQuery)],["Monthly generation cost",money(r.monthlyGen)]]},
+  gpu:{n:"Self-hosted GPU", c:computeGPU, groups:SECTIONS.gpu, results:r=>[["Total VRAM / replica",gb(r.totalVRAM)],["GPUs / replica",fmt(r.gpusPerReplica)],["Throughput / replica",fmt(r.tps)+" tok/s"],["Replicas for QPS",fmt(r.replicas)],["Total GPUs · monthly HW",fmt(r.totalGPUs)+" · "+money(r.monthlyHW)],["Self-host $/1M vs API",money(r.selfCostPer1M)+" vs "+money(r.api)+" ("+(r.cheaper?"self-host":"API")+" wins)"]]},
+  trad:{n:"Traditional application", c:computeTrad, groups:SECTIONS.trad, results:r=>[["Peak RPS",fmt(r.peakRps,1)],["App instances",fmt(r.appServers)],["Concurrency",fmt(r.concurrency,1)],["Egress (peak)",fmt(r.egressMbps,0)+" Mbps"],["Projected storage",gb(r.projReplGB)],["Cache RAM",gb(r.cacheGB)],["DB IOPS · nodes",fmt(r.dbIops,0)+" · "+fmt(r.dbNodes)],["Monthly infra cost",money(r.monthlyCost)]]}};
+function buildReport(){
+  const scope=str("rep_scope"), title=str("rep_title")||"Capacity & Sizing Report", forWho=str("rep_for"), notes=str("rep_notes");
+  const now=new Date().toISOString().slice(0,10);
+  const mods = scope==="all"?["agentic","rag","gpu","trad"]:[scope];
+  let html=`<div class="report-section"><h1>${esc(title)}</h1><p class="meta">Generated ${esc(now)}${forWho?" · "+esc(forWho):""} · System Sizer</p>${notes?`<p>${esc(notes)}</p>`:""}</div>`;
+  html+=`<div class="report-section"><h2>How to read this report</h2><ul>
+    <li><b>Assumptions</b> list every input — they make the result reproducible.</li>
+    <li><b>Equations</b> show each formula symbolically and with your numbers substituted, so every figure is auditable by hand.</li>
+    <li><b>Results</b> summarize capacity and cost. Size for <b>peak</b>, keep <b>headroom</b>, and remember output tokens dominate LLM cost.</li>
+    <li>Defaults are starting points — validate with your own measurements before committing budget or hardware.</li>
+    <li>All abbreviations are defined in the <b>Appendix</b>.</li></ul></div>`;
+  let i=1;
+  for(const key of mods){ const d=REPORT_DEFS[key]; const r=d.c();
+    html+=`<div class="report-section"><h2>${i} · ${esc(d.n)} — assumptions</h2>${assumeTable(d.groups)}</div>`;
+    html+=`<div class="report-section"><h2>${i} · ${esc(d.n)} — equations</h2>${eqTable(r.eqs)}</div>`;
+    let rows=`<tr><th>Result</th><th class="num">Value</th></tr>`+d.results(r).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${esc(v)}</td></tr>`).join("");
+    html+=`<div class="report-section"><h2>${i} · ${esc(d.n)} — results</h2><div class="scroll"><table>${rows}</table></div></div>`; i++;
+  }
+  html+=`<div class="report-section"><h2>Appendix · Abbreviations &amp; glossary</h2>${glossaryHTML()}</div>`;
+  return {html,title};
+}
+function renderReport(){ const {html}=buildReport(); const out=$("reportOutput"); out.innerHTML=html; out.classList.add("show"); }
+function reportToMarkdown(){
+  const scope=str("rep_scope"), title=str("rep_title")||"Capacity & Sizing Report", forWho=str("rep_for"), notes=str("rep_notes");
+  const now=new Date().toISOString().slice(0,10), mods=scope==="all"?["agentic","rag","gpu","trad"]:[scope];
+  let md=`# ${title}\n\n_Generated ${now}${forWho?" · "+forWho:""}${notes?" · "+notes:""}_\n\n`;
+  md+=`## How to read this report\n- **Assumptions** make the result reproducible.\n- **Equations** show each formula with your numbers substituted so you can audit it.\n- **Results** are capacity + cost; size for peak, keep headroom, output tokens dominate.\n- Defaults are starting points — validate with your own measurements.\n\n`;
+  let i=1;
+  for(const key of mods){ const d=REPORT_DEFS[key], r=d.c();
+    md+=`## ${i}. ${d.n}\n\n**Assumptions**\n\n| Input | Value |\n|---|---|\n`;
+    for(const g of d.groups) for(const f of F[g]){ let v=STORE[f.id]; if(f.type==="check") v=v?"yes":"no"; else if(f.type==="select"&&f.options[v]) v=f.options[v].label; md+=`| ${f.label} | ${v} |\n`; }
+    md+=`\n**Equations**\n\n| Quantity | Formula | With your numbers | Result |\n|---|---|---|---|\n`+r.eqs.map(e=>`| ${e.name} | \`${e.formula}\` | ${e.sub} | **${e.value}** |`).join("\n")+`\n\n`;
+    md+=`**Results**\n\n| Result | Value |\n|---|---|\n`+d.results(r).map(([k,v])=>`| ${k} | ${v} |`).join("\n")+`\n\n`; i++;
+  }
+  md+=`## Appendix — Abbreviations & glossary\n\n`+Object.entries(GLOSSARY).map(([k,v])=>`- **${k}** — ${v}`).join("\n")+"\n";
+  return md;
+}
+function reportToHTML(){ const {html,title}=buildReport();
+  const css=`body{font:14px/1.55 system-ui,Segoe UI,Roboto,Arial,sans-serif;color:#15233b;max-width:900px;margin:32px auto;padding:0 18px}h1,h2,h3{color:#0b2a4a}h2{border-bottom:2px solid #d8e2f0;padding-bottom:4px;margin-top:26px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e2e8f2}td.num,th.num{text-align:right}code{background:#eef3fb;padding:1px 5px;border-radius:5px}.meta{color:#5a6b8c}.eq .v{color:#0b6e62;font-weight:700}`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>${css}</style></head><body>${html}</body></html>`;
+}
+function download(name,text,type){ const b=new Blob([text],{type}),u=URL.createObjectURL(b),a=document.createElement("a"); a.href=u; a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(u);a.remove();},100); }
+function reportName(ext){ return (str("rep_title")||"report").replace(/[^a-z0-9]+/gi,"-").toLowerCase().replace(/^-|-$/g,"")+"."+ext; }
+
+/* ============================ events ============================ */
+function refresh(){
+  if(MODE==="expert"){ renderExpertOut(); }
+  else if(wiz.type && wiz.idx>=WIZ[wiz.type].length){ const m=MOD[wiz.type]; const b=$("wizSummaryBody"); if(b) b.innerHTML=m.html(m.compute()); }
+  clearTimeout(saveTimer); saveTimer=setTimeout(saveHash,400);
+}
+function onChange(e){
+  const el=e.target; if(!el.id) return;
+  if(el.tagName==="INPUT"&&el.type==="checkbox") STORE[el.id]=el.checked;
+  else if(el.tagName==="INPUT"||el.tagName==="SELECT"){ if(el.id in STORE || el.closest("#expert,#wizard")) STORE[el.id]=el.value; }
+  applyPreset(el.id);
+  refresh();
+}
+function flash(btn,msg){ const old=btn.textContent; btn.textContent=msg; setTimeout(()=>btn.textContent=old,1200); }
+function onClick(e){
+  const t=e.target.closest("button"); if(!t) return;
+  if(t.dataset.mode){ setMode(t.dataset.mode); return; }
+  if(t.dataset.type){ wiz={type:t.dataset.type,idx:0}; renderWizard(); return; }
+  if(t.dataset.example){ loadExample(t.dataset.example); return; }
+  switch(t.id){
+    case "wizExit": wiz={type:null,idx:0}; renderWizard(); break;
+    case "wizBack": if(wiz.idx>0){wiz.idx--;} else {wiz.type=null;} renderWizard(); break;
+    case "wizNext": wiz.idx++; renderWizard(); break;
+    case "wizRestart": wiz={type:null,idx:0}; renderWizard(); break;
+    case "wizReport": setMode("expert"); gotoTab("report"); renderReport(); break;
+    case "wizExpert": setMode("expert"); gotoTab(wiz.type); break;
+    case "btnGen": renderReport(); break;
+    case "btnPrint": renderReport(); setTimeout(()=>window.print(),60); break;
+    case "btnMd": download(reportName("md"),reportToMarkdown(),"text/markdown"); break;
+    case "btnHtml": download(reportName("html"),reportToHTML(),"text/html"); break;
+    case "btnShare": saveHash(); if(navigator.clipboard) navigator.clipboard.writeText(location.href).catch(()=>{}); flash(t,"Copied!"); break;
+    case "btnJson": if(navigator.clipboard) navigator.clipboard.writeText(JSON.stringify(collectState(),null,2)).catch(()=>{}); flash(t,"Copied!"); break;
+  }
+}
+
+/* ============================ boot ============================ */
+function boot(){
+  initStore(); mountRef(); wireTabs();
+  const had=loadHash();
+  document.addEventListener("input",onChange);
+  document.addEventListener("change",onChange);
+  document.addEventListener("click",onClick);
+  // restore mode if shared link used expert
+  let startMode="wizard";
+  if(had && location.hash){ try{ const o=JSON.parse(decodeURIComponent(atob(location.hash.slice(1)))); if(o.__mode==="expert") startMode="expert"; }catch(e){} }
+  setMode(startMode);
+}
+document.addEventListener("DOMContentLoaded",boot);
+</script>
+</body>
+</html>
