@@ -64,11 +64,18 @@ npm run server     # http://localhost:8787
 
 ## How capacity is calculated
 
-Per-user peak demand (`req/s per user × peak multiplier`) is propagated from each traffic
-source through the wired graph. A node passes `demand × outflow` downstream — so a **cache
-hit ratio** reduces what reaches the database behind it. For each node,
-`max users = capacity ÷ per-user demand`; the **system maximum is the most constrained node
-on the path** (the bottleneck).
+Each **traffic source** (a Users/Client node) emits its own configured peak load — either a
+**population** (`users × req/s per user × peak`) or a **fixed rate** (`req/s × peak`) for
+API/service consumers. Add several sources to mix human and programmatic traffic; their
+demand **sums** at shared components. Demand is propagated through the wired graph, where a
+node passes `demand × outflow` downstream — so a **cache hit ratio** reduces what reaches the
+database behind it.
+
+Because demand is linear in traffic, the whole system can grow by
+`scaleMultiplier = min(capacity ÷ demand)` over the constrained nodes; that tightest node is
+the **bottleneck**, and each population source can then serve `users × scaleMultiplier`. The
+headline shows the headroom multiplier plus max users (and per-source maxima are in the
+report). Global workload values act as **defaults** for sources that don't override them.
 
 Capacity models and default constants are grounded in [`../capacity-planning-guide.md`](../capacity-planning-guide.md)
 (~200–250 RPS/instance, target utilization ~0.6, cache hit 80–85%, peak 3–4×, read replicas

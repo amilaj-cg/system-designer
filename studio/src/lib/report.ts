@@ -1,11 +1,15 @@
 import type { SystemAnalysis } from '../capacity'
-import { fmtUsers } from '../capacity'
+import { fmtMult, fmtUsers } from '../capacity'
 import type { GlobalAssumptions } from '../types'
 
 function rps(n: number | null): string {
   if (n == null) return '—'
   if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k req/s`
   return `${Math.round(n)} req/s`
+}
+
+function sourceMax(s: SystemAnalysis['sources'][number]): string {
+  return s.mode === 'population' ? `${fmtUsers(s.maxUsers ?? 0)} users` : rps(s.maxRps ?? 0)
 }
 
 export function buildReportMarkdown(name: string, a: SystemAnalysis, g: GlobalAssumptions): string {
@@ -16,27 +20,32 @@ export function buildReportMarkdown(name: string, a: SystemAnalysis, g: GlobalAs
   lines.push('')
   lines.push('## Headline')
   lines.push('')
-  lines.push(`- **Max concurrent users:** ${fmtUsers(a.maxUsers)}`)
+  lines.push(`- **Headroom:** system can handle **${fmtMult(a.scaleMultiplier)}** the configured traffic before saturating`)
+  if (a.sources.some((s) => s.mode === 'population')) lines.push(`- **Max concurrent users:** ${fmtUsers(a.maxUsers)} (across population sources)`)
+  lines.push(`- **Configured peak load:** ${rps(a.configuredPeakRps)} entering the system`)
   lines.push(`- **Bottleneck:** ${a.bottleneckLabel ?? 'none (no constrained component on the traffic path)'}`)
   lines.push(`- **Estimated infra cost:** $${a.totalMonthlyCost.toLocaleString()}/month (fixed components; LLM/usage billed separately)`)
   lines.push('')
-  lines.push('## Workload assumptions')
+  lines.push('## Traffic sources')
   lines.push('')
-  lines.push(`- Requests/sec per active user: **${g.rpsPerUser}**`)
-  lines.push(`- Peak-to-average multiplier: **${g.peakRatio}×**`)
-  lines.push(`- Write ratio: **${Math.round(g.writeRatio * 100)}%**`)
-  lines.push(`- Reference target users: **${g.targetUsers.toLocaleString()}**`)
+  lines.push('| Source | Type | Configured | Peak in | Max at system limit |')
+  lines.push('|---|---|---|---|---|')
+  for (const s of a.sources) {
+    const configured = s.mode === 'population' ? `${fmtUsers(s.users ?? 0)} users` : rps(s.rps ?? 0)
+    lines.push(`| ${s.label} | ${s.mode === 'population' ? 'Population' : 'Fixed rate'} | ${configured} | ${rps(s.peakRps)} | ${sourceMax(s)} |`)
+  }
+  if (!a.sources.length) lines.push('| _none_ | — | — | — | — |')
   lines.push('')
-  lines.push(`> Peak load at target = ${g.targetUsers.toLocaleString()} users × ${g.rpsPerUser} × ${g.peakRatio} = **${rps(a.reachablePeakRps)}** entering the system.`)
+  lines.push(`> Global defaults — req/s per user **${g.rpsPerUser}**, peak **${g.peakRatio}×**, write ratio **${Math.round(g.writeRatio * 100)}%** — apply to sources that don't override them.`)
   lines.push('')
   lines.push('## Per-component analysis')
   lines.push('')
-  lines.push('| Component | Type | Capacity | Load @target | Max users | Cost/mo |')
+  lines.push('| Component | Type | Capacity | Load (mix) | Headroom | Cost/mo |')
   lines.push('|---|---|---|---|---|---|')
   for (const nd of a.nodes) {
     lines.push(
       `| ${nd.label} | ${nd.type} | ${rps(nd.capacity)} | ${nd.onPath && nd.capacity != null ? Math.round(nd.utilization * 100) + '%' : '—'} | ${
-        nd.capacity == null || !nd.onPath ? '—' : fmtUsers(nd.maxUsers)
+        nd.capacity == null || !nd.onPath ? '—' : fmtMult(nd.headroom)
       } | ${nd.monthlyCost ? '$' + nd.monthlyCost : '—'} |`,
     )
   }
@@ -56,9 +65,9 @@ export function buildReportMarkdown(name: string, a: SystemAnalysis, g: GlobalAs
   lines.push('## Method')
   lines.push('')
   lines.push(
-    'Per-user peak demand is propagated from each traffic source through the wired graph. ' +
-      'A node passes `demand × outflow` to its downstream neighbours, so a cache (hit ratio) reduces what reaches the stores behind it. ' +
-      'Each node’s `max users = capacity ÷ per-user demand`; the system maximum is the most constrained node on the path (the bottleneck).',
+    'Each traffic source emits its configured peak req/s (population = users × req/s × peak, or a fixed rate × peak). ' +
+      'Demand is propagated through the wired graph — a node passes `demand × outflow` to its downstream neighbours, so a cache (hit ratio) reduces what reaches the stores behind it. ' +
+      'Because demand is linear in traffic, the whole system can grow by `scaleMultiplier = min(capacity ÷ demand)` over constrained nodes; that tightest node is the bottleneck, and each population source can then serve `users × scaleMultiplier`.',
   )
   lines.push('')
   return lines.join('\n')
@@ -96,8 +105,20 @@ export function buildReportHtml(
         <td class="muted">${esc(n.type)}</td>
         <td class="num">${rps(n.capacity)}</td>
         <td class="num">${n.onPath && n.capacity != null ? Math.round(n.utilization * 100) + '%' : '—'}</td>
-        <td class="num">${n.capacity == null || !n.onPath ? '—' : fmtUsers(n.maxUsers)}</td>
+        <td class="num">${n.capacity == null || !n.onPath ? '—' : fmtMult(n.headroom)}</td>
         <td class="num">${n.monthlyCost ? '$' + n.monthlyCost.toLocaleString() : '—'}</td>
+      </tr>`,
+    )
+    .join('')
+
+  const sourceRows = a.sources
+    .map(
+      (s) => `<tr>
+        <td>${esc(s.label)}</td>
+        <td class="muted">${s.mode === 'population' ? 'Population' : 'Fixed rate'}</td>
+        <td class="num">${s.mode === 'population' ? fmtUsers(s.users ?? 0) + ' users' : rps(s.rps ?? 0)}</td>
+        <td class="num">${rps(s.peakRps)}</td>
+        <td class="num">${s.mode === 'population' ? fmtUsers(s.maxUsers ?? 0) + ' users' : rps(s.maxRps ?? 0)}</td>
       </tr>`,
     )
     .join('')
@@ -107,7 +128,7 @@ export function buildReportHtml(
       (n) => `<div class="bar-row">
         <div class="bar-label"><span>${esc(n.label)}</span><span class="muted">${rps(n.capacity)}</span></div>
         <div class="bar-track"><div class="bar-fill" style="width:${Math.min(n.utilization * 100, 100)}%;background:${utilColor(n.utilization)}"></div></div>
-        <div class="bar-meta muted"><span>${Math.round(n.utilization * 100)}% at ${g.targetUsers.toLocaleString()} users</span><span>holds ${fmtUsers(n.maxUsers)} users</span></div>
+        <div class="bar-meta muted"><span>${Math.round(n.utilization * 100)}% at configured mix</span><span>${fmtMult(n.headroom)} headroom</span></div>
       </div>`,
     )
     .join('')
@@ -185,37 +206,37 @@ export function buildReportHtml(
   ${figure}
 
   <section class="cards avoid-break">
-    <div class="card"><div class="k">Max concurrent users</div><div class="v" style="color:#1b5cc4">${fmtUsers(a.maxUsers)}</div></div>
-    <div class="card"><div class="k">Peak load @ target</div><div class="v" style="color:#0f8a7e">${rps(a.reachablePeakRps)}</div></div>
+    <div class="card"><div class="k">Traffic headroom</div><div class="v" style="color:#1b5cc4">${fmtMult(a.scaleMultiplier)}</div></div>
+    ${a.sources.some((s) => s.mode === 'population')
+      ? `<div class="card"><div class="k">Max concurrent users</div><div class="v" style="color:#0f8a7e">${fmtUsers(a.maxUsers)}</div></div>`
+      : `<div class="card"><div class="k">Configured peak</div><div class="v" style="color:#0f8a7e">${rps(a.configuredPeakRps)}</div></div>`}
     <div class="card"><div class="k">Infra cost</div><div class="v" style="color:#9a7400">$${a.totalMonthlyCost.toLocaleString()}/mo</div></div>
   </section>
 
   <div class="callout avoid-break">
     <div class="k">Bottleneck</div>
     <div class="v">${esc(a.bottleneckLabel ?? 'No constrained component on the traffic path')}</div>
-    <div class="muted" style="font-size:11.5px;margin-top:3px">This component saturates first. Add instances/replicas or raise its limits to lift the system ceiling.</div>
+    <div class="muted" style="font-size:11.5px;margin-top:3px">This component saturates first — the system can grow ${fmtMult(a.scaleMultiplier)} before it does. Add instances/replicas or raise its limits to lift the ceiling.</div>
   </div>
 
   <section class="avoid-break">
-    <h2>Workload assumptions</h2>
-    <ul>
-      <li>Requests/sec per active user: <b>${esc(g.rpsPerUser)}</b></li>
-      <li>Peak-to-average multiplier: <b>${esc(g.peakRatio)}×</b></li>
-      <li>Write ratio: <b>${Math.round(g.writeRatio * 100)}%</b></li>
-      <li>Reference target users: <b>${g.targetUsers.toLocaleString()}</b></li>
-    </ul>
-    <p class="muted" style="font-size:12px">Peak load at target = ${g.targetUsers.toLocaleString()} users × ${esc(g.rpsPerUser)} × ${esc(g.peakRatio)} = <b>${rps(a.reachablePeakRps)}</b> entering the system.</p>
+    <h2>Traffic sources</h2>
+    <table>
+      <thead><tr><th>Source</th><th>Type</th><th class="num">Configured</th><th class="num">Peak in</th><th class="num">Max at limit</th></tr></thead>
+      <tbody>${sourceRows || '<tr><td class="muted" colspan="5">No traffic source wired.</td></tr>'}</tbody>
+    </table>
+    <p class="muted" style="font-size:12px;margin-top:6px">Global defaults — req/s per user <b>${esc(g.rpsPerUser)}</b>, peak <b>${esc(g.peakRatio)}×</b>, write ratio <b>${Math.round(g.writeRatio * 100)}%</b> — apply to sources that don't override them.</p>
   </section>
 
   <section>
     <h2>Per-component analysis</h2>
     <table>
-      <thead><tr><th>Component</th><th>Type</th><th class="num">Capacity</th><th class="num">Load @target</th><th class="num">Max users</th><th class="num">Cost/mo</th></tr></thead>
+      <thead><tr><th>Component</th><th>Type</th><th class="num">Capacity</th><th class="num">Load (mix)</th><th class="num">Headroom</th><th class="num">Cost/mo</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   </section>
 
-  ${onPath.length ? `<section class="avoid-break"><h2>Utilization at ${g.targetUsers.toLocaleString()} users</h2><div class="bars">${bars}</div></section>` : ''}
+  ${onPath.length ? `<section class="avoid-break"><h2>Utilization at the configured mix</h2><div class="bars">${bars}</div></section>` : ''}
 
   <section>
     <h2>How each capacity was derived</h2>
@@ -226,7 +247,7 @@ export function buildReportHtml(
 
   <section class="avoid-break">
     <h2>Method</h2>
-    <p class="method">Per-user peak demand is propagated from each traffic source through the wired graph. A node passes <i>demand × outflow</i> to its downstream neighbours, so a cache (hit ratio) reduces what reaches the stores behind it. Each node's <i>max users = capacity ÷ per-user demand</i>; the system maximum is the most constrained node on the path (the bottleneck). Figures are planning estimates — measure and load-test before committing budget or hardware.</p>
+    <p class="method">Each traffic source emits its configured peak req/s (population = users × req/s × peak, or a fixed rate × peak). Demand is propagated through the wired graph — a node passes <i>demand × outflow</i> to its downstream neighbours, so a cache (hit ratio) reduces what reaches the stores behind it. Because demand is linear in traffic, the whole system can grow by <i>scaleMultiplier = min(capacity ÷ demand)</i> over constrained nodes; that tightest node is the bottleneck, and each population source can then serve <i>users × scaleMultiplier</i>. Figures are planning estimates — measure and load-test before committing budget or hardware.</p>
   </section>
 
   <footer>Generated by System Designer Studio.</footer>

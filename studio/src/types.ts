@@ -25,6 +25,8 @@ export interface FieldDef {
   min?: number
   step?: number
   help?: string
+  /** Only show this field when the predicate holds (given the node's config). */
+  showIf?: (cfg: Record<string, any>) => boolean
 }
 
 export interface CapacityResult {

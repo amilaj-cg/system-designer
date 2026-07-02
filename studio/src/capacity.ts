@@ -1,40 +1,83 @@
-import { CATALOG } from './catalog'
+import { CATALOG, TRAFFIC_RATE } from './catalog'
 import type { DesignEdge, DesignNode, GlobalAssumptions } from './types'
+
+export type SourceMode = 'population' | 'rate'
 
 export interface NodeAnalysis {
   id: string
   label: string
   type: string
-  /** Per-user demand in req/s reaching this node at peak (users = 1). */
-  demandPerUser: number
-  /** Sustainable capacity in req/s (null = no constraint / source). */
+  /** Req/s reaching this node at peak, under the configured traffic mix. */
+  demand: number
+  /** Sustainable capacity in req/s (null = source / no constraint). */
   capacity: number | null
   capacityNote: string
-  /** Max users this node alone can support. Infinity if unconstrained or no demand. */
-  maxUsers: number
-  /** Utilization at the reference target user count (0-1+). */
+  /** demand ÷ capacity at the configured mix (0-1+). */
   utilization: number
+  /** capacity ÷ demand — how much traffic can grow before this node saturates. */
+  headroom: number
   onPath: boolean
   monthlyCost: number
 }
 
+export interface SourceAnalysis {
+  id: string
+  label: string
+  mode: SourceMode
+  /** Configured population (population mode). */
+  users?: number
+  /** Configured flat rate before peak (rate mode). */
+  rps?: number
+  /** Peak req/s this source emits into the system at the configured mix. */
+  peakRps: number
+  /** Max sustainable at the system's scale ceiling. */
+  maxUsers?: number
+  maxRps?: number
+}
+
 export interface SystemAnalysis {
+  /** How much total traffic can grow before the bottleneck saturates (×). */
+  scaleMultiplier: number
+  /** Total sustainable users across all population sources (0 if none). */
   maxUsers: number
   bottleneckId: string | null
   bottleneckLabel: string | null
   nodes: NodeAnalysis[]
+  sources: SourceAnalysis[]
   totalMonthlyCost: number
   warnings: string[]
-  reachablePeakRps: number // peak req/s at target users entering the system
+  /** Total peak req/s entering the system at the configured mix. */
+  configuredPeakRps: number
+}
+
+function num(v: unknown, fallback: number): number {
+  const n = Number(v)
+  return Number.isFinite(n) && v !== '' && v != null ? n : fallback
+}
+
+/** Peak req/s a source emits, based on its own config (falling back to globals). */
+function sourceEmission(node: DesignNode, g: GlobalAssumptions): Omit<SourceAnalysis, 'id' | 'label'> {
+  const cfg = node.data.config || {}
+  const peak = num(cfg.peak, g.peakRatio)
+
+  // Explicit client nodes carry their own workload; other entry points (a node
+  // with no inbound edge) fall back to the global default population.
+  if (node.data.type === 'client' && cfg.mode === TRAFFIC_RATE) {
+    const rps = num(cfg.rps, 0)
+    return { mode: 'rate', rps, peakRps: rps * peak }
+  }
+  const users = node.data.type === 'client' ? num(cfg.users, g.targetUsers) : g.targetUsers
+  const rpu = node.data.type === 'client' ? num(cfg.rpsPerUser, g.rpsPerUser) : g.rpsPerUser
+  return { mode: 'population', users, peakRps: users * rpu * peak }
 }
 
 /**
- * Propagate per-user peak demand through the graph and compute, for each node,
- * how many users it can sustain. The system maximum is the bottleneck (minimum).
+ * Propagate each source's configured peak demand through the wired graph, then
+ * report how far total traffic can scale before the tightest node saturates.
  *
- * Demand model: a source emits `rpsPerUser × peakRatio` req/s per user. Each node
- * passes `demand × outflowMultiplier` to every downstream node (a node that filters
- * traffic, like a cache, reduces what reaches its downstream stores).
+ * Because demand is linear in traffic, the whole system can grow by
+ * `scaleMultiplier = min(capacity ÷ demand)` over constrained on-path nodes.
+ * Each population source can then serve `users × scaleMultiplier`.
  */
 export function analyze(
   nodes: DesignNode[],
@@ -56,21 +99,21 @@ export function analyze(
     }
   })
 
-  // Sources: explicit clients, or any node with no inbound edge.
-  const sources = nodes.filter(
+  const sourceNodes = nodes.filter(
     (n) => n.data.type === 'client' || incoming.get(n.id)!.length === 0,
   )
-  if (sources.length === 0 && nodes.length > 0) {
+  if (sourceNodes.length === 0 && nodes.length > 0) {
     warnings.push('No traffic source found — add a Users/Client node or an entry point with no inbound connection.')
   }
 
-  // Per-user peak demand entering the system.
-  const entryDemand = g.rpsPerUser * g.peakRatio
-
-  // Propagate demand with a worklist (handles DAGs; guards against cycles).
   const demand = new Map<string, number>()
   nodes.forEach((n) => demand.set(n.id, 0))
-  sources.forEach((s) => demand.set(s.id, (demand.get(s.id) || 0) + entryDemand))
+  const emissions = new Map<string, ReturnType<typeof sourceEmission>>()
+  sourceNodes.forEach((s) => {
+    const em = sourceEmission(s, g)
+    emissions.set(s.id, em)
+    demand.set(s.id, (demand.get(s.id) || 0) + em.peakRps)
+  })
 
   const order = topoOrder(nodes, outgoing, incoming)
   if (order.cyclic) warnings.push('Cycle detected in connections — capacity propagation may be approximate.')
@@ -81,47 +124,61 @@ export function analyze(
     const inflow = demand.get(id) || 0
     const mult = def.outflowMultiplier ? def.outflowMultiplier(node.data.config, g) : 1
     const outflow = inflow * mult
-    for (const t of outgoing.get(id)!) {
-      demand.set(t, (demand.get(t) || 0) + outflow)
-    }
+    for (const t of outgoing.get(id)!) demand.set(t, (demand.get(t) || 0) + outflow)
   }
 
   const analyses: NodeAnalysis[] = nodes.map((n) => {
     const def = CATALOG[n.data.type]
-    const demandPerUser = demand.get(n.id) || 0
+    const d = demand.get(n.id) || 0
     const cap = def.capacity ? def.capacity(n.data.config, g) : null
     const capacity = cap ? cap.rps : null
-    const maxUsers =
-      capacity == null || demandPerUser <= 0 ? Infinity : capacity / demandPerUser
-    const utilization =
-      capacity == null || capacity <= 0 ? 0 : (demandPerUser * g.targetUsers) / capacity
-    const monthlyCost = def.monthlyCost ? def.monthlyCost(n.data.config) : 0
+    const utilization = capacity == null || capacity <= 0 ? 0 : d / capacity
+    const headroom = capacity == null || d <= 0 ? Infinity : capacity / d
     return {
       id: n.id,
       label: n.data.label,
       type: def.label,
-      demandPerUser,
+      demand: d,
       capacity,
       capacityNote: cap ? cap.note : 'Source / no throughput constraint.',
-      maxUsers,
       utilization,
-      onPath: demandPerUser > 0,
-      monthlyCost,
+      headroom,
+      onPath: d > 0,
+      monthlyCost: def.monthlyCost ? def.monthlyCost(n.data.config) : 0,
     }
   })
 
-  // System max = the most constrained node that actually receives traffic.
-  let maxUsers = Infinity
+  // System headroom = the tightest constrained node that receives traffic.
+  let scaleMultiplier = Infinity
   let bottleneck: NodeAnalysis | null = null
   for (const a of analyses) {
-    if (a.capacity != null && a.demandPerUser > 0 && a.maxUsers < maxUsers) {
-      maxUsers = a.maxUsers
+    if (a.capacity != null && a.demand > 0 && a.headroom < scaleMultiplier) {
+      scaleMultiplier = a.headroom
       bottleneck = a
     }
   }
-  if (bottleneck == null) maxUsers = 0
+  const S = scaleMultiplier
 
-  const totalMonthlyCost = analyses.reduce((s, a) => s + a.monthlyCost, 0)
+  const sources: SourceAnalysis[] = sourceNodes.map((s) => {
+    const em = emissions.get(s.id)!
+    return {
+      id: s.id,
+      label: s.data.label,
+      mode: em.mode,
+      users: em.users,
+      rps: em.rps,
+      peakRps: em.peakRps,
+      maxUsers: em.mode === 'population' ? (isFinite(S) ? Math.floor((em.users || 0) * S) : Infinity) : undefined,
+      maxRps: em.mode === 'rate' ? (isFinite(S) ? (em.rps || 0) * S : Infinity) : undefined,
+    }
+  })
+
+  const popSources = sources.filter((s) => s.mode === 'population')
+  const maxUsers = popSources.length === 0 ? 0 : isFinite(S) ? popSources.reduce((a, s) => a + (s.maxUsers || 0), 0) : Infinity
+
+  if (isFinite(S) && S < 1) {
+    warnings.push(`Configured traffic exceeds capacity — ${bottleneck?.label ?? 'a component'} is over 100% utilized. Scale it up or reduce load.`)
+  }
 
   const orphans = analyses.filter((a) => !a.onPath && byId.get(a.id)!.data.type !== 'client' && a.capacity != null)
   if (orphans.length) {
@@ -129,13 +186,15 @@ export function analyze(
   }
 
   return {
-    maxUsers: Math.floor(maxUsers),
+    scaleMultiplier: S,
+    maxUsers: isFinite(maxUsers) ? Math.floor(maxUsers) : Infinity,
     bottleneckId: bottleneck?.id ?? null,
     bottleneckLabel: bottleneck?.label ?? null,
     nodes: analyses,
-    totalMonthlyCost,
+    sources,
+    totalMonthlyCost: analyses.reduce((s, a) => s + a.monthlyCost, 0),
     warnings,
-    reachablePeakRps: entryDemand * g.targetUsers,
+    configuredPeakRps: sources.reduce((s, x) => s + x.peakRps, 0),
   }
 }
 
@@ -160,12 +219,7 @@ function topoOrder(
     }
   }
   const cyclic = list.length < nodes.length
-  if (cyclic) {
-    // Append the rest so propagation still touches every node once.
-    nodes.forEach((n) => {
-      if (!seen.has(n.id)) list.push(n.id)
-    })
-  }
+  if (cyclic) nodes.forEach((n) => !seen.has(n.id) && list.push(n.id))
   return { list, cyclic }
 }
 
@@ -174,4 +228,11 @@ export function fmtUsers(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M'
   if (n >= 1_000) return (n / 1_000).toFixed(n >= 10_000 ? 0 : 1) + 'k'
   return String(Math.round(n))
+}
+
+export function fmtMult(n: number): string {
+  if (!isFinite(n)) return '∞'
+  if (n >= 100) return Math.round(n) + '×'
+  if (n >= 10) return n.toFixed(0) + '×'
+  return n.toFixed(1) + '×'
 }

@@ -1,6 +1,7 @@
 import { CATALOG } from '../catalog'
 import { useStore } from '../store'
-import { useNodeAnalysis } from '../lib/analysisContext'
+import { useAnalysis, useNodeAnalysis } from '../lib/analysisContext'
+import { fmtMult } from '../capacity'
 import { getIcon } from '../themes'
 import type { FieldDef } from '../types'
 import { GlobalsEditor } from './GlobalsEditor'
@@ -16,6 +17,7 @@ export function ConfigPanel() {
   const deleteNode = useStore((s) => s.deleteNode)
   const themeId = useStore((s) => s.themeId)
   const analysis = useNodeAnalysis(selectedId || '')
+  const system = useAnalysis()
 
   if (multi) return <MultiSelectPanel />
 
@@ -36,6 +38,7 @@ export function ConfigPanel() {
 
   const def = CATALOG[node.data.type]
   const Icon = getIcon(themeId, node.data.type)
+  const source = system?.sources.find((s) => s.id === node.id)
 
   return (
     <div className="w-72 shrink-0 border-l border-line bg-panel flex flex-col">
@@ -57,14 +60,34 @@ export function ConfigPanel() {
           />
         </Field>
 
-        {def.fields.map((f) => (
-          <ConfigField
-            key={f.key}
-            field={f}
-            value={node.data.config[f.key]}
-            onChange={(v) => updateNodeConfig(node.id, f.key, v)}
-          />
-        ))}
+        {def.fields
+          .filter((f) => !f.showIf || f.showIf(node.data.config))
+          .map((f) => (
+            <ConfigField
+              key={f.key}
+              field={f}
+              value={node.data.config[f.key]}
+              onChange={(v) => updateNodeConfig(node.id, f.key, v)}
+            />
+          ))}
+
+        {source && (
+          <div className="rounded-lg border border-line bg-panel2 p-2.5 mt-2">
+            <div className="text-[10.5px] uppercase tracking-wider text-muted mb-1">Traffic source</div>
+            <div className="text-[13px] font-semibold text-ink">{fmtRps(source.peakRps)} at peak</div>
+            <div className="text-[11px] text-muted mt-1 leading-snug">
+              {source.mode === 'population'
+                ? `${fmtUsers(source.users ?? 0)} users emitting into the system.`
+                : `Fixed API/service rate into the system.`}
+            </div>
+            <div className="text-[11px] mt-1.5 text-muted">
+              At the system limit: up to{' '}
+              <b className="text-ink">
+                {source.mode === 'population' ? `${fmtUsers(source.maxUsers ?? 0)} users` : `${fmtRps(source.maxRps ?? 0)}`}
+              </b>
+            </div>
+          </div>
+        )}
 
         {analysis && analysis.capacity != null && (
           <div className="rounded-lg border border-line bg-panel2 p-2.5 mt-2">
@@ -73,8 +96,7 @@ export function ConfigPanel() {
             <div className="text-[11px] text-muted mt-1 leading-snug">{analysis.capacityNote}</div>
             {analysis.onPath && (
               <div className="text-[11px] mt-1.5" style={{ color: analysis.utilization >= 1 ? '#ff7a7a' : '#97a1bd' }}>
-                {Math.round(analysis.utilization * 100)}% utilized at target users · supports up to{' '}
-                <b className="text-ink">{fmtUsers(analysis.maxUsers)}</b> users
+                {Math.round(analysis.utilization * 100)}% utilized at the configured mix · {fmtMult(analysis.headroom)} headroom
               </div>
             )}
           </div>

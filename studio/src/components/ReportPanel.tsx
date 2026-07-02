@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '../store'
 import { useAnalysis } from '../lib/analysisContext'
-import { fmtUsers } from '../capacity'
+import { fmtMult, fmtUsers } from '../capacity'
 import { buildReportHtml, buildReportMarkdown, downloadMarkdown, printReportHtml } from '../lib/report'
 import { renderDiagramPng } from '../lib/export'
 
@@ -80,8 +80,12 @@ export function ReportPanel({ onClose }: { onClose: () => void }) {
         <div className="flex-1 overflow-y-auto scroll-thin px-4 py-4 space-y-4">
           {/* Headline */}
           <div className="grid grid-cols-3 gap-3">
-            <Stat label="Max users" value={fmtUsers(analysis.maxUsers)} accent="#6ea8fe" />
-            <Stat label="Peak load @target" value={rps(analysis.reachablePeakRps)} accent="#5fd0c3" />
+            <Stat label="Traffic headroom" value={fmtMult(analysis.scaleMultiplier)} accent="#6ea8fe" />
+            {analysis.sources.some((s) => s.mode === 'population') ? (
+              <Stat label="Max users" value={fmtUsers(analysis.maxUsers)} accent="#5fd0c3" />
+            ) : (
+              <Stat label="Configured peak" value={rps(analysis.configuredPeakRps)} accent="#5fd0c3" />
+            )}
             <Stat label="Infra cost" value={`$${analysis.totalMonthlyCost.toLocaleString()}/mo`} accent="#ffcf66" />
           </div>
 
@@ -91,7 +95,8 @@ export function ReportPanel({ onClose }: { onClose: () => void }) {
               {analysis.bottleneckLabel ?? 'No constrained component on the path'}
             </div>
             <p className="text-[12px] text-muted mt-1 leading-snug">
-              This component saturates first. Add instances/replicas or raise its limits to lift the system ceiling.
+              Saturates first — the system can grow {fmtMult(analysis.scaleMultiplier)} before it does. Add
+              instances/replicas or raise its limits to lift the ceiling.
             </p>
           </div>
 
@@ -102,6 +107,31 @@ export function ReportPanel({ onClose }: { onClose: () => void }) {
                   ⚠ {w}
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Traffic sources */}
+          {analysis.sources.length > 0 && (
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-muted mb-2">Traffic sources</div>
+              <div className="space-y-2">
+                {analysis.sources.map((s) => (
+                  <div key={s.id} className="rounded-lg border border-line bg-panel2 p-2.5 flex items-baseline justify-between">
+                    <div>
+                      <span className="text-[12.5px] text-ink font-medium">{s.label}</span>
+                      <span className="text-[10.5px] text-muted ml-2">
+                        {s.mode === 'population' ? `${fmtUsers(s.users ?? 0)} users` : rps(s.rps ?? 0)}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[11px] text-muted">{rps(s.peakRps)} peak in</div>
+                      <div className="text-[11.5px] text-ink">
+                        max {s.mode === 'population' ? `${fmtUsers(s.maxUsers ?? 0)} users` : rps(s.maxRps ?? 0)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -125,8 +155,8 @@ export function ReportPanel({ onClose }: { onClose: () => void }) {
                       />
                     </div>
                     <div className="flex justify-between text-[10.5px] text-muted">
-                      <span>{Math.round(n.utilization * 100)}% at {globals.targetUsers.toLocaleString()} users</span>
-                      <span>holds {fmtUsers(n.maxUsers)} users</span>
+                      <span>{Math.round(n.utilization * 100)}% at configured mix</span>
+                      <span>{fmtMult(n.headroom)} headroom</span>
                     </div>
                   </div>
                 ))}

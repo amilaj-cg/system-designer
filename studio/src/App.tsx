@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ReactFlowProvider } from '@xyflow/react'
 import { useStore } from './store'
-import { analyze } from './capacity'
+import { analyze, fmtMult, type SystemAnalysis } from './capacity'
 import { clearShareHash, readDesignFromHash } from './lib/share'
 import { useEditorShortcuts } from './lib/useEditorShortcuts'
 import { AnalysisContext } from './lib/analysisContext'
@@ -46,7 +46,7 @@ export default function App() {
               {view === 'graph' ? (
                 <>
                   <Canvas />
-                  <SummaryPill maxUsers={analysis.maxUsers} bottleneck={analysis.bottleneckLabel} count={nodes.length} />
+                  <SummaryPill analysis={analysis} count={nodes.length} />
                 </>
               ) : (
                 <JsonView />
@@ -61,15 +61,7 @@ export default function App() {
   )
 }
 
-function SummaryPill({
-  maxUsers,
-  bottleneck,
-  count,
-}: {
-  maxUsers: number
-  bottleneck: string | null
-  count: number
-}) {
+function SummaryPill({ analysis, count }: { analysis: SystemAnalysis; count: number }) {
   if (count === 0) {
     return (
       <div className="absolute left-1/2 -translate-x-1/2 top-4 pointer-events-none">
@@ -79,16 +71,24 @@ function SummaryPill({
       </div>
     )
   }
+  const { maxUsers, scaleMultiplier, bottleneckLabel, sources } = analysis
+  const hasPop = sources.some((s) => s.mode === 'population')
   return (
     <div className="absolute left-1/2 -translate-x-1/2 bottom-4 pointer-events-none">
       <div className="rounded-full bg-panel/95 border border-line px-4 py-1.5 text-[12.5px] text-ink shadow-lg flex items-center gap-2">
         <span className="text-muted">Capacity</span>
-        <b className="text-accent">{fmtUsers(maxUsers)} users</b>
-        {bottleneck && (
+        {hasPop ? (
+          <b className="text-accent">{fmtUsers(maxUsers)} users</b>
+        ) : (
+          <b className="text-accent">{fmtMult(scaleMultiplier)} traffic</b>
+        )}
+        <span className="text-line">•</span>
+        <b style={{ color: scaleMultiplier < 1 ? '#ff7a7a' : '#5fd0c3' }}>{fmtMult(scaleMultiplier)} headroom</b>
+        {bottleneckLabel && (
           <>
             <span className="text-line">•</span>
             <span className="text-muted">limited by</span>
-            <b style={{ color: '#ff7a7a' }}>{bottleneck}</b>
+            <b style={{ color: '#ff7a7a' }}>{bottleneckLabel}</b>
           </>
         )}
       </div>

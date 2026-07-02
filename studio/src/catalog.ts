@@ -1,5 +1,9 @@
 import type { ComponentDef, ComponentType, GlobalAssumptions } from './types'
 
+/** Entry-node traffic modes (values stored in a client node's `mode` config). */
+export const TRAFFIC_POPULATION = 'Population (users)'
+export const TRAFFIC_RATE = 'Fixed rate (API)'
+
 export const DEFAULT_GLOBALS: GlobalAssumptions = {
   rpsPerUser: 0.05, // ~1 request every 20s per active user
   peakRatio: 3,
@@ -22,11 +26,17 @@ export const CATALOG: Record<ComponentType, ComponentDef> = {
     label: 'Users / Client',
     category: 'Entry',
     accent: '#9bb4ff',
-    blurb: 'Traffic source. Represents the end-user population that drives load.',
+    blurb:
+      'Traffic source. Model an end-user population (users × req/s) or a fixed-rate API/service consumer. Add several to mix human and programmatic traffic.',
     fields: [
-      { key: 'platform', label: 'Platform', type: 'select', options: ['Web', 'Mobile', 'API consumer', 'IoT'] },
+      { key: 'mode', label: 'Traffic type', type: 'select', options: [TRAFFIC_POPULATION, TRAFFIC_RATE], help: 'Population scales with user count; fixed rate is a flat req/s (e.g. partner/API integration).' },
+      { key: 'platform', label: 'Platform', type: 'select', options: ['Web', 'Mobile', 'API consumer', 'IoT', 'Service'] },
+      { key: 'users', label: 'Active users', type: 'number', unit: 'users', min: 0, step: 1000, help: 'Concurrent active users.', showIf: (c) => c.mode !== TRAFFIC_RATE },
+      { key: 'rpsPerUser', label: 'Req/s per user', type: 'number', unit: 'req/s', min: 0, step: 0.01, help: 'Average requests/sec each active user generates.', showIf: (c) => c.mode !== TRAFFIC_RATE },
+      { key: 'rps', label: 'Request rate', type: 'number', unit: 'req/s', min: 0, step: 100, help: 'Average sustained requests/sec from this source.', showIf: (c) => c.mode === TRAFFIC_RATE },
+      { key: 'peak', label: 'Peak multiplier', type: 'number', unit: '×', min: 1, step: 0.5, help: 'Peak ÷ average for this source (guide: 3–4×).' },
     ],
-    defaults: { platform: 'Web' },
+    defaults: { mode: TRAFFIC_POPULATION, platform: 'Web', users: 10_000, rpsPerUser: 0.05, rps: 500, peak: 3 },
     capacity: null,
   },
 
