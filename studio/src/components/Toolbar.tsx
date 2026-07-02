@@ -14,6 +14,8 @@ export function Toolbar({ onToggleReport }: { onToggleReport: () => void }) {
   const loadDesign = useStore((s) => s.loadDesign)
   const reset = useStore((s) => s.reset)
   const nodes = useStore((s) => s.nodes)
+  const view = useStore((s) => s.view)
+  const setView = useStore((s) => s.setView)
 
   const fileInput = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -88,6 +90,15 @@ export function Toolbar({ onToggleReport }: { onToggleReport: () => void }) {
         aria-label="Design name"
       />
 
+      <div className="flex items-center rounded-lg border border-line overflow-hidden ml-1">
+        <ViewTab active={view === 'graph'} onClick={() => setView('graph')}>
+          ◈ Graph
+        </ViewTab>
+        <ViewTab active={view === 'json'} onClick={() => setView('json')}>
+          {'{ }'} JSON
+        </ViewTab>
+      </div>
+
       <div className="flex-1" />
 
       <select
@@ -123,6 +134,28 @@ export function Toolbar({ onToggleReport }: { onToggleReport: () => void }) {
         </div>
       )}
     </header>
+  )
+}
+
+function ViewTab({
+  children,
+  active,
+  onClick,
+}: {
+  children: React.ReactNode
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={
+        'text-[12px] px-3 py-1.5 ' +
+        (active ? 'bg-accent text-canvas font-semibold' : 'bg-panel2 text-ink hover:bg-line')
+      }
+    >
+      {children}
+    </button>
   )
 }
 

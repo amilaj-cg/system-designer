@@ -14,6 +14,7 @@ import type { ComponentType, DesignEdge, DesignFile, DesignNode, GlobalAssumptio
 
 export type SelectionMode = 'pan' | 'select'
 export type AlignAxis = 'left' | 'right' | 'top' | 'bottom' | 'centerX' | 'centerY'
+export type ViewMode = 'graph' | 'json'
 
 interface Snapshot {
   nodes: DesignNode[]
@@ -34,6 +35,7 @@ interface StoreState {
   selectedIds: string[]
 
   // editor settings
+  view: ViewMode
   snapToGrid: boolean
   gridSize: number
   selectionMode: SelectionMode
@@ -47,6 +49,7 @@ interface StoreState {
   setTheme: (id: string) => void
   setGlobals: (g: Partial<GlobalAssumptions>) => void
 
+  setView: (v: ViewMode) => void
   toggleSnap: () => void
   setGridSize: (n: number) => void
   setSelectionMode: (m: SelectionMode) => void
@@ -113,6 +116,7 @@ export const useStore = create<StoreState>((set, get) => ({
   selectedId: null,
   selectedIds: [],
 
+  view: 'graph',
   snapToGrid: true,
   gridSize: 20,
   selectionMode: 'pan',
@@ -125,6 +129,7 @@ export const useStore = create<StoreState>((set, get) => ({
   setTheme: (themeId) => set({ themeId }),
   setGlobals: (g) => set((s) => ({ globals: { ...s.globals, ...g } })),
 
+  setView: (view) => set({ view }),
   toggleSnap: () => set((s) => ({ snapToGrid: !s.snapToGrid })),
   setGridSize: (gridSize) => set({ gridSize }),
   setSelectionMode: (selectionMode) => set({ selectionMode }),

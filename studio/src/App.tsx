@@ -8,6 +8,7 @@ import { AnalysisContext } from './lib/analysisContext'
 import { Toolbar } from './components/Toolbar'
 import { Palette } from './components/Palette'
 import { Canvas } from './components/Canvas'
+import { JsonView } from './components/JsonView'
 import { ConfigPanel } from './components/ConfigPanel'
 import { ReportPanel } from './components/ReportPanel'
 import { fmtUsers } from './capacity'
@@ -16,6 +17,7 @@ export default function App() {
   const nodes = useStore((s) => s.nodes)
   const edges = useStore((s) => s.edges)
   const globals = useStore((s) => s.globals)
+  const view = useStore((s) => s.view)
   const [showReport, setShowReport] = useState(false)
   const loadDesign = useStore((s) => s.loadDesign)
 
@@ -39,12 +41,18 @@ export default function App() {
         <div className="h-full flex flex-col">
           <Toolbar onToggleReport={() => setShowReport(true)} />
           <div className="flex-1 flex min-h-0">
-            <Palette />
+            {view === 'graph' && <Palette />}
             <div className="flex-1 relative min-w-0">
-              <Canvas />
-              <SummaryPill maxUsers={analysis.maxUsers} bottleneck={analysis.bottleneckLabel} count={nodes.length} />
+              {view === 'graph' ? (
+                <>
+                  <Canvas />
+                  <SummaryPill maxUsers={analysis.maxUsers} bottleneck={analysis.bottleneckLabel} count={nodes.length} />
+                </>
+              ) : (
+                <JsonView />
+              )}
             </div>
-            <ConfigPanel />
+            {view === 'graph' && <ConfigPanel />}
           </div>
         </div>
         {showReport && <ReportPanel onClose={() => setShowReport(false)} />}

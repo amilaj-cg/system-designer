@@ -44,6 +44,10 @@ npm run server     # http://localhost:8787
   TPM/RPM and tokens/request.
 - **See capacity live**: each node shows a utilization bar; the bottleneck is outlined in
   red; the bottom pill shows the system's max users.
+- **Switch Graph ⇄ JSON** (top toolbar): the JSON view is a live, editable representation of
+  the design in the same format as `Save .json`. Edit it and press **Apply changes** to load
+  it back into the canvas (parsed + validated), or **Revert**. While untouched it stays in
+  sync with the graph.
 - **Generate a report** (top-right): headline max-users, per-component utilization, derived
   formulas, warnings, and rough monthly cost. **Download as Markdown**, or **Print / Save as
   PDF** — which renders a proper standalone document (light theme, real typography, the
