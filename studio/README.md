@@ -35,6 +35,9 @@ npm run server     # http://localhost:8787
   - **Multi-select** — box-select an area, or Shift-click to add/remove. The inspector then
     shows bulk tools: **align** (left/center/right · top/middle/bottom), **duplicate**, and
     **delete**.
+  - **Auto-arrange** (`⤢ Arrange`) — a layered (dagre) layout that removes node overlaps
+    and untangles connections, laid out **left→right** or **top→bottom** (`LR`/`TB` toggle,
+    which also flips the node handle sides). Undoable, and grid-snapped when snap is on.
   - **Undo / redo**, with coalesced field edits so a burst of typing is one step.
   - **Shortcuts**: ⌘Z/⌘⇧Z undo·redo, ⌘A select-all, ⌘C/⌘V copy·paste, ⌘D duplicate,
     Delete/Backspace remove, Esc clear. (A `?` button lists them.)

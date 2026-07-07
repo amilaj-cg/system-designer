@@ -13,6 +13,7 @@
     "start": "npm run build && node server/index.js"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@xyflow/react": "^12.3.5",
     "express": "^4.21.1",
     "html-to-image": "^1.11.11",

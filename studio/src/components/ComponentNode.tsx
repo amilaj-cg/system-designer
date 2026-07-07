@@ -14,11 +14,14 @@ function utilColor(u: number): string {
 
 function ComponentNodeImpl({ id, data, selected }: NodeProps<DesignNode>) {
   const themeId = useStore((s) => s.themeId)
+  const dir = useStore((s) => s.flowDirection)
   const def = CATALOG[data.type]
   const Icon = getIcon(themeId, data.type)
   const analysis = useNodeAnalysis(id)
   const system = useAnalysis()
   const isBottleneck = system?.bottleneckId === id
+  const targetPos = dir === 'TB' ? Position.Top : Position.Left
+  const sourcePos = dir === 'TB' ? Position.Bottom : Position.Right
 
   const util = analysis?.utilization ?? 0
   const showBar = analysis?.capacity != null && analysis.onPath
@@ -31,7 +34,7 @@ function ComponentNodeImpl({ id, data, selected }: NodeProps<DesignNode>) {
         boxShadow: isBottleneck ? '0 0 0 2px rgba(255,122,122,.45)' : undefined,
       }}
     >
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={targetPos} />
       <div className="flex items-center gap-2 px-3 pt-2.5">
         <span style={{ color: def.accent }}>
           <Icon size={26} />
@@ -60,7 +63,7 @@ function ComponentNodeImpl({ id, data, selected }: NodeProps<DesignNode>) {
       )}
       {!showBar && <div className="pb-2.5" />}
 
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={sourcePos} />
     </div>
   )
 }

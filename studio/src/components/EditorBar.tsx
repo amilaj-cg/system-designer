@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useReactFlow } from '@xyflow/react'
 import { useStore } from '../store'
 
 const GRID_OPTIONS = [10, 16, 20, 24, 40]
@@ -15,7 +16,17 @@ export function EditorBar() {
   const mode = useStore((s) => s.selectionMode)
   const setMode = useStore((s) => s.setSelectionMode)
   const selCount = useStore((s) => s.selectedIds.length)
+  const autoArrange = useStore((s) => s.autoArrange)
+  const dir = useStore((s) => s.flowDirection)
+  const hasNodes = useStore((s) => s.nodes.length > 0)
+  const { fitView } = useReactFlow()
   const [help, setHelp] = useState(false)
+
+  const arrange = (d: 'LR' | 'TB') => {
+    autoArrange(d)
+    // Wait for the controlled nodes to commit before framing them.
+    requestAnimationFrame(() => requestAnimationFrame(() => fitView({ padding: 0.2, duration: 400 })))
+  }
 
   return (
     <div className="absolute left-3 top-3 z-10 flex items-center gap-1.5">
@@ -56,6 +67,25 @@ export function EditorBar() {
             </option>
           ))}
         </select>
+
+        <Sep />
+
+        <button
+          onClick={() => arrange(dir)}
+          disabled={!hasNodes}
+          title="Auto-arrange — remove overlaps and untangle connections"
+          className="h-7 px-2 text-[11.5px] rounded-lg border border-line bg-panel2 text-ink hover:border-accent disabled:opacity-30"
+        >
+          ⤢ Arrange
+        </button>
+        <div className="flex rounded-lg overflow-hidden border border-line">
+          <Seg active={dir === 'LR'} onClick={() => arrange('LR')} title="Arrange left → right">
+            → LR
+          </Seg>
+          <Seg active={dir === 'TB'} onClick={() => arrange('TB')} title="Arrange top → bottom">
+            ↓ TB
+          </Seg>
+        </div>
 
         <Sep />
 
@@ -144,6 +174,7 @@ const SHORTCUTS: [string, string][] = [
   ['Delete / Backspace', 'Delete selection'],
   ['⌘Z / ⌘⇧Z', 'Undo / redo'],
   ['Esc', 'Clear selection'],
+  ['⤢ Arrange', 'Auto-layout, remove overlaps'],
 ]
 
 function ShortcutsPopover({ onClose }: { onClose: () => void }) {

@@ -10,6 +10,7 @@ import {
 import { create } from 'zustand'
 import { CATALOG, DEFAULT_GLOBALS } from './catalog'
 import { DEFAULT_THEME_ID } from './themes'
+import { autoLayout, type LayoutDirection } from './lib/layout'
 import type { ComponentType, DesignEdge, DesignFile, DesignNode, GlobalAssumptions } from './types'
 
 export type SelectionMode = 'pan' | 'select'
@@ -39,6 +40,7 @@ interface StoreState {
   snapToGrid: boolean
   gridSize: number
   selectionMode: SelectionMode
+  flowDirection: LayoutDirection
 
   // history
   past: Snapshot[]
@@ -53,6 +55,7 @@ interface StoreState {
   toggleSnap: () => void
   setGridSize: (n: number) => void
   setSelectionMode: (m: SelectionMode) => void
+  autoArrange: (direction?: LayoutDirection) => void
 
   onNodesChange: (changes: NodeChange<DesignNode>[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
@@ -120,6 +123,7 @@ export const useStore = create<StoreState>((set, get) => ({
   snapToGrid: true,
   gridSize: 20,
   selectionMode: 'pan',
+  flowDirection: 'LR',
 
   past: [],
   future: [],
@@ -130,6 +134,22 @@ export const useStore = create<StoreState>((set, get) => ({
   setGlobals: (g) => set((s) => ({ globals: { ...s.globals, ...g } })),
 
   setView: (view) => set({ view }),
+
+  autoArrange: (direction) =>
+    set((s) => {
+      if (!s.nodes.length) return {}
+      const dir = direction ?? s.flowDirection
+      let laid = autoLayout(s.nodes, s.edges, dir)
+      if (s.snapToGrid) {
+        const step = s.gridSize || 1
+        laid = laid.map((n) => ({
+          ...n,
+          position: { x: Math.round(n.position.x / step) * step, y: Math.round(n.position.y / step) * step },
+        }))
+      }
+      return { ...history(s), nodes: laid, flowDirection: dir }
+    }),
+
   toggleSnap: () => set((s) => ({ snapToGrid: !s.snapToGrid })),
   setGridSize: (gridSize) => set({ gridSize }),
   setSelectionMode: (selectionMode) => set({ selectionMode }),
