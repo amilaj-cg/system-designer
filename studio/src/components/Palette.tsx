@@ -11,6 +11,11 @@ export function Palette() {
   const all = listComponents()
   const q = query.trim().toLowerCase()
 
+  // Collapsible pack sections — first section expanded by default.
+  const firstGroup = all[0]?.group ?? ''
+  const [open, setOpen] = useState<Record<string, boolean>>(() => ({ [firstGroup]: true }))
+  const toggle = (g: string) => setOpen((o) => ({ ...o, [g]: !o[g] }))
+
   // Group by pack (group) → category, preserving registration order.
   const grouped = useMemo(() => {
     const filtered = q
@@ -44,14 +49,24 @@ export function Palette() {
           className="mt-2 w-full bg-panel2 border border-line rounded-lg px-2.5 py-1 text-[12px] text-ink focus:outline-none focus:border-accent"
         />
       </div>
-      <div className="flex-1 overflow-y-auto scroll-thin px-2 py-2 space-y-3">
-        {Array.from(grouped.entries()).map(([group, cats]) => (
+      <div className="flex-1 overflow-y-auto scroll-thin px-2 py-2 space-y-2">
+        {Array.from(grouped.entries()).map(([group, cats]) => {
+          // While searching, force every matching section open.
+          const expanded = q ? true : !!open[group]
+          const count = Array.from(cats.values()).reduce((n, items) => n + items.length, 0)
+          return (
           <div key={group}>
-            <div className="px-1 pb-1 flex items-center gap-1.5">
+            <button
+              onClick={() => toggle(group)}
+              className="w-full px-1.5 py-1 flex items-center gap-1.5 rounded-lg hover:bg-panel2"
+              aria-expanded={expanded}
+            >
+              <span className={'text-muted transition-transform ' + (expanded ? 'rotate-90' : '')}>▸</span>
               <span className="text-[11px] font-semibold text-ink">{group}</span>
-              <span className="h-px flex-1 bg-line" />
-            </div>
-            {Array.from(cats.entries()).map(([cat, items]) => (
+              <span className="ml-auto text-[10px] text-muted">{count}</span>
+            </button>
+            {expanded &&
+            Array.from(cats.entries()).map(([cat, items]) => (
               <div key={cat} className="mb-1.5">
                 <div className="px-1 pb-0.5 text-[10px] uppercase tracking-wider text-muted">{cat}</div>
                 <div className="space-y-1">
@@ -77,7 +92,8 @@ export function Palette() {
               </div>
             ))}
           </div>
-        ))}
+          )
+        })}
         {grouped.size === 0 && <div className="px-2 py-4 text-[12px] text-muted">No components match “{query}”.</div>}
       </div>
       <div className="px-3 py-2 border-t border-line text-[10.5px] text-muted">
