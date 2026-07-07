@@ -1,27 +1,13 @@
-import type { ComponentDef, ComponentType, GlobalAssumptions } from './types'
-
-/** Entry-node traffic modes (values stored in a client node's `mode` config). */
-export const TRAFFIC_POPULATION = 'Population (users)'
-export const TRAFFIC_RATE = 'Fixed rate (API)'
-
-export const DEFAULT_GLOBALS: GlobalAssumptions = {
-  rpsPerUser: 0.05, // ~1 request every 20s per active user
-  peakRatio: 3,
-  targetUsers: 10_000,
-  writeRatio: 0.2,
-}
+import type { ComponentDef, ComponentPack } from '../types'
+import { TRAFFIC_POPULATION, TRAFFIC_RATE, fmt, clamp01 } from './constants'
 
 /**
- * Component catalog. Each entry defines the configurable fields (with sensible
- * defaults so a system can be simulated immediately), and a capacity model that
- * returns the sustainable requests/sec the component can serve.
- *
- * Capacity heuristics are drawn from capacity-planning-guide.md:
- *   ~200-250 RPS/instance · target utilization 0.6 · cache hit 80-85%
- *   write ratio 15-20% · peak 3-4x · read replicas scale reads.
+ * Core pack — the vendor-neutral building blocks. Capacity heuristics are drawn
+ * from capacity-planning-guide.md: ~200-250 RPS/instance · target utilization
+ * 0.6 · cache hit 80-85% · write ratio 15-20% · peak 3-4x · replicas scale reads.
  */
-export const CATALOG: Record<ComponentType, ComponentDef> = {
-  client: {
+const components: ComponentDef[] = [
+  {
     type: 'client',
     label: 'Users / Client',
     category: 'Entry',
@@ -39,8 +25,7 @@ export const CATALOG: Record<ComponentType, ComponentDef> = {
     defaults: { mode: TRAFFIC_POPULATION, platform: 'Web', users: 10_000, rpsPerUser: 0.05, rps: 500, peak: 3 },
     capacity: null,
   },
-
-  cdn: {
+  {
     type: 'cdn',
     label: 'CDN / Edge',
     category: 'Edge',
@@ -54,8 +39,7 @@ export const CATALOG: Record<ComponentType, ComponentDef> = {
     capacity: (c) => ({ rps: c.maxRps, note: `Edge fleet rated at ${fmt(c.maxRps)} req/s.` }),
     outflowMultiplier: (c) => 1 - clamp01((c.offload ?? 0) / 100),
   },
-
-  lb: {
+  {
     type: 'lb',
     label: 'Load Balancer',
     category: 'Networking',
@@ -69,8 +53,7 @@ export const CATALOG: Record<ComponentType, ComponentDef> = {
     capacity: (c) => ({ rps: c.maxThroughput, note: `LB rated at ${fmt(c.maxThroughput)} req/s.` }),
     monthlyCost: () => 25,
   },
-
-  apiGateway: {
+  {
     type: 'apiGateway',
     label: 'API Gateway',
     category: 'Networking',
@@ -88,8 +71,7 @@ export const CATALOG: Record<ComponentType, ComponentDef> = {
     }),
     monthlyCost: (c) => 40 * c.instances,
   },
-
-  idp: {
+  {
     type: 'idp',
     label: 'Identity Provider',
     category: 'Security',
@@ -107,8 +89,7 @@ export const CATALOG: Record<ComponentType, ComponentDef> = {
     }),
     monthlyCost: (c) => 60 * c.instances,
   },
-
-  server: {
+  {
     type: 'server',
     label: 'App Server / VM',
     category: 'Compute',
@@ -133,8 +114,7 @@ export const CATALOG: Record<ComponentType, ComponentDef> = {
     },
     monthlyCost: (c) => Math.round((c.cpuCount * 12 + c.memoryGB * 4 + c.storageGB * 0.1) * c.instances),
   },
-
-  cache: {
+  {
     type: 'cache',
     label: 'Cache',
     category: 'Data',
@@ -148,12 +128,10 @@ export const CATALOG: Record<ComponentType, ComponentDef> = {
     ],
     defaults: { engine: 'Redis', memoryGB: 16, maxOps: 100_000, hitRatio: 0.85 },
     capacity: (c) => ({ rps: c.maxOps, note: `${fmt(c.maxOps)} ops/s in-memory.` }),
-    // Cache-aside: only the miss fraction continues to downstream (e.g. DB).
     outflowMultiplier: (c) => 1 - clamp01(c.hitRatio),
     monthlyCost: (c) => Math.round(c.memoryGB * 15),
   },
-
-  queue: {
+  {
     type: 'queue',
     label: 'Message Queue',
     category: 'Messaging',
@@ -168,8 +146,7 @@ export const CATALOG: Record<ComponentType, ComponentDef> = {
     capacity: (c) => ({ rps: c.maxThroughput, note: `${fmt(c.maxThroughput)} msg/s across ${c.partitions} partition(s).` }),
     monthlyCost: () => 120,
   },
-
-  db: {
+  {
     type: 'db',
     label: 'Database',
     category: 'Data',
@@ -183,7 +160,6 @@ export const CATALOG: Record<ComponentType, ComponentDef> = {
     ],
     defaults: { engine: 'PostgreSQL', maxQps: 5_000, readReplicas: 1, storageGB: 200 },
     capacity: (c, g) => {
-      // Writes hit only the primary; reads spread across primary + replicas.
       const readCap = c.maxQps * (1 + c.readReplicas)
       const writeCap = c.maxQps / Math.max(g.writeRatio, 0.001)
       const rps = Math.min(readCap / Math.max(1 - g.writeRatio, 0.001), writeCap)
@@ -194,8 +170,7 @@ export const CATALOG: Record<ComponentType, ComponentDef> = {
     },
     monthlyCost: (c) => Math.round((300 + c.storageGB * 0.2) * (1 + c.readReplicas)),
   },
-
-  vectorDb: {
+  {
     type: 'vectorDb',
     label: 'Vector DB',
     category: 'Data',
@@ -212,8 +187,7 @@ export const CATALOG: Record<ComponentType, ComponentDef> = {
     capacity: (c) => ({ rps: c.maxQps * c.replicas, note: `${fmt(c.maxQps)} q/s × ${c.replicas} replica(s) = ${fmt(c.maxQps * c.replicas)} req/s.` }),
     monthlyCost: (c) => Math.round((c.vectors * c.dim * 4 / 1e9) * 50 + 80) * c.replicas,
   },
-
-  llm: {
+  {
     type: 'llm',
     label: 'LLM Service',
     category: 'AI',
@@ -236,10 +210,9 @@ export const CATALOG: Record<ComponentType, ComponentDef> = {
         note: `min(${fmt(c.tpm)} tok/min ÷ ${fmt(c.tokensPerReq)} tok, ${fmt(c.rpm)} req/min) ÷ 60 = ${rps.toFixed(2)} req/s (${bound}).`,
       }
     },
-    monthlyCost: () => 0, // usage-based; tracked separately
+    monthlyCost: () => 0,
   },
-
-  objectStore: {
+  {
     type: 'objectStore',
     label: 'Object Store',
     category: 'Data',
@@ -253,16 +226,11 @@ export const CATALOG: Record<ComponentType, ComponentDef> = {
     capacity: (c) => ({ rps: c.maxRps, note: `${fmt(c.maxRps)} req/s per prefix.` }),
     monthlyCost: (c) => Math.round(c.storageTB * 1024 * 0.023),
   },
-}
+]
 
-export const CATALOG_LIST: ComponentDef[] = Object.values(CATALOG)
-
-function fmt(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1) + 'M'
-  if (n >= 1_000) return (n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1) + 'k'
-  return String(Math.round(n))
-}
-
-function clamp01(n: number): number {
-  return Math.max(0, Math.min(1, n))
+export const corePack: ComponentPack = {
+  id: 'core',
+  name: 'Core',
+  description: 'Vendor-neutral building blocks.',
+  components,
 }

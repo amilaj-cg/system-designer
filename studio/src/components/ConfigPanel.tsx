@@ -1,8 +1,8 @@
-import { CATALOG } from '../catalog'
+import { getDef } from '../catalog'
 import { useStore } from '../store'
 import { useAnalysis, useNodeAnalysis } from '../lib/analysisContext'
 import { fmtMult } from '../capacity'
-import { getIcon } from '../themes'
+import { componentIcon } from '../themes'
 import type { FieldDef } from '../types'
 import { GlobalsEditor } from './GlobalsEditor'
 import { MultiSelectPanel } from './MultiSelectPanel'
@@ -36,8 +36,8 @@ export function ConfigPanel() {
     )
   }
 
-  const def = CATALOG[node.data.type]
-  const Icon = getIcon(themeId, node.data.type)
+  const def = getDef(node.data.type)
+  const Icon = componentIcon(themeId, node.data.type)
   const source = system?.sources.find((s) => s.id === node.id)
 
   return (

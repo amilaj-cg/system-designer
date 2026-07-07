@@ -1,4 +1,5 @@
 import type { ComponentType } from '../types'
+import { getDef } from '../catalog'
 import { defaultTheme } from './default'
 import { solidTheme } from './solid'
 import type { IconComponent, IconTheme } from './types'
@@ -25,6 +26,19 @@ export function listThemes(): IconTheme[] {
 export function getIcon(themeId: string, type: ComponentType): IconComponent {
   const theme = registry.get(themeId)
   return theme?.icons[type] ?? defaultTheme.icons[type] ?? FallbackIcon
+}
+
+/**
+ * Icon for any component, including extension packs. Resolution order:
+ * theme override (so vendor themes can restyle anything) → the pack's own icon
+ * → the default generic theme → a plain fallback box.
+ */
+export function componentIcon(themeId: string, type: ComponentType): IconComponent {
+  const theme = registry.get(themeId)
+  if (theme?.icons[type]) return theme.icons[type]!
+  const def = getDef(type)
+  if (def.icon) return def.icon
+  return defaultTheme.icons[type] ?? FallbackIcon
 }
 
 const FallbackIcon: IconComponent = ({ size = 28, className }) => (

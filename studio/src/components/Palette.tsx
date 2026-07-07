@@ -1,12 +1,32 @@
-import { CATALOG_LIST } from '../catalog'
-import { getIcon } from '../themes'
+import { useMemo, useState } from 'react'
+import { listComponents } from '../catalog'
+import { componentIcon } from '../themes'
 import { useStore } from '../store'
-import type { ComponentType } from '../types'
+import type { ComponentDef, ComponentType } from '../types'
 
 export function Palette() {
   const themeId = useStore((s) => s.themeId)
+  const [query, setQuery] = useState('')
 
-  const categories = Array.from(new Set(CATALOG_LIST.map((c) => c.category)))
+  const all = listComponents()
+  const q = query.trim().toLowerCase()
+
+  // Group by pack (group) → category, preserving registration order.
+  const grouped = useMemo(() => {
+    const filtered = q
+      ? all.filter((c) => c.label.toLowerCase().includes(q) || c.category.toLowerCase().includes(q) || (c.group ?? '').toLowerCase().includes(q))
+      : all
+    const byGroup = new Map<string, Map<string, ComponentDef[]>>()
+    for (const c of filtered) {
+      const g = c.group ?? 'Other'
+      if (!byGroup.has(g)) byGroup.set(g, new Map())
+      const cats = byGroup.get(g)!
+      if (!cats.has(c.category)) cats.set(c.category, [])
+      cats.get(c.category)!.push(c)
+    }
+    return byGroup
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, all.length])
 
   const onDragStart = (e: React.DragEvent, type: ComponentType) => {
     e.dataTransfer.setData('application/sysdesign', type)
@@ -15,38 +35,53 @@ export function Palette() {
 
   return (
     <div className="w-56 shrink-0 border-r border-line bg-panel flex flex-col">
-      <div className="px-3 py-3 border-b border-line">
+      <div className="px-3 py-2.5 border-b border-line">
         <div className="text-[13px] font-semibold text-ink">Components</div>
-        <div className="text-[11px] text-muted">Drag onto the canvas</div>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search…"
+          className="mt-2 w-full bg-panel2 border border-line rounded-lg px-2.5 py-1 text-[12px] text-ink focus:outline-none focus:border-accent"
+        />
       </div>
       <div className="flex-1 overflow-y-auto scroll-thin px-2 py-2 space-y-3">
-        {categories.map((cat) => (
-          <div key={cat}>
-            <div className="px-1 pb-1 text-[10.5px] uppercase tracking-wider text-muted">{cat}</div>
-            <div className="space-y-1">
-              {CATALOG_LIST.filter((c) => c.category === cat).map((c) => {
-                const Icon = getIcon(themeId, c.type)
-                return (
-                  <div
-                    key={c.type}
-                    draggable
-                    onDragStart={(e) => onDragStart(e, c.type)}
-                    className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg border border-transparent hover:border-line hover:bg-panel2 cursor-grab active:cursor-grabbing"
-                    title={c.blurb}
-                  >
-                    <span style={{ color: c.accent }}>
-                      <Icon size={22} />
-                    </span>
-                    <span className="text-[12.5px] text-ink">{c.label}</span>
-                  </div>
-                )
-              })}
+        {Array.from(grouped.entries()).map(([group, cats]) => (
+          <div key={group}>
+            <div className="px-1 pb-1 flex items-center gap-1.5">
+              <span className="text-[11px] font-semibold text-ink">{group}</span>
+              <span className="h-px flex-1 bg-line" />
             </div>
+            {Array.from(cats.entries()).map(([cat, items]) => (
+              <div key={cat} className="mb-1.5">
+                <div className="px-1 pb-0.5 text-[10px] uppercase tracking-wider text-muted">{cat}</div>
+                <div className="space-y-1">
+                  {items.map((c) => {
+                    const Icon = componentIcon(themeId, c.type)
+                    return (
+                      <div
+                        key={c.type}
+                        draggable
+                        onDragStart={(e) => onDragStart(e, c.type)}
+                        className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg border border-transparent hover:border-line hover:bg-panel2 cursor-grab active:cursor-grabbing"
+                        title={c.blurb}
+                      >
+                        <span style={{ color: c.accent }}>
+                          <Icon size={20} />
+                        </span>
+                        <span className="text-[12px] text-ink leading-tight">{c.label}</span>
+                        {c.isContainer && <span className="ml-auto text-[9px] text-muted border border-line rounded px-1">group</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         ))}
+        {grouped.size === 0 && <div className="px-2 py-4 text-[12px] text-muted">No components match “{query}”.</div>}
       </div>
       <div className="px-3 py-2 border-t border-line text-[10.5px] text-muted">
-        Tip: connect a node's right handle to the next node's left handle to wire the flow.
+        Drag onto the canvas. Drop a component onto a VM/Cluster/Boundary to place it inside.
       </div>
     </div>
   )

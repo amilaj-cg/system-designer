@@ -1,4 +1,4 @@
-import { CATALOG, TRAFFIC_RATE } from './catalog'
+import { getDef, TRAFFIC_RATE } from './catalog'
 import type { DesignEdge, DesignNode, GlobalAssumptions } from './types'
 
 export type SourceMode = 'population' | 'rate'
@@ -99,8 +99,9 @@ export function analyze(
     }
   })
 
+  // Containers/boundaries carry no traffic — never treat them as sources.
   const sourceNodes = nodes.filter(
-    (n) => n.data.type === 'client' || incoming.get(n.id)!.length === 0,
+    (n) => !getDef(n.data.type).isContainer && (n.data.type === 'client' || incoming.get(n.id)!.length === 0),
   )
   if (sourceNodes.length === 0 && nodes.length > 0) {
     warnings.push('No traffic source found — add a Users/Client node or an entry point with no inbound connection.')
@@ -120,7 +121,7 @@ export function analyze(
 
   for (const id of order.list) {
     const node = byId.get(id)!
-    const def = CATALOG[node.data.type]
+    const def = getDef(node.data.type)
     const inflow = demand.get(id) || 0
     const mult = def.outflowMultiplier ? def.outflowMultiplier(node.data.config, g) : 1
     const outflow = inflow * mult
@@ -128,7 +129,7 @@ export function analyze(
   }
 
   const analyses: NodeAnalysis[] = nodes.map((n) => {
-    const def = CATALOG[n.data.type]
+    const def = getDef(n.data.type)
     const d = demand.get(n.id) || 0
     const cap = def.capacity ? def.capacity(n.data.config, g) : null
     const capacity = cap ? cap.rps : null

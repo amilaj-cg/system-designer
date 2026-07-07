@@ -1,7 +1,7 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { memo } from 'react'
-import { CATALOG } from '../catalog'
-import { getIcon } from '../themes'
+import { getDef } from '../catalog'
+import { componentIcon } from '../themes'
 import { useStore } from '../store'
 import { useNodeAnalysis, useAnalysis } from '../lib/analysisContext'
 import type { DesignNode } from '../types'
@@ -15,8 +15,8 @@ function utilColor(u: number): string {
 function ComponentNodeImpl({ id, data, selected }: NodeProps<DesignNode>) {
   const themeId = useStore((s) => s.themeId)
   const dir = useStore((s) => s.flowDirection)
-  const def = CATALOG[data.type]
-  const Icon = getIcon(themeId, data.type)
+  const def = getDef(data.type)
+  const Icon = componentIcon(themeId, data.type)
   const analysis = useNodeAnalysis(id)
   const system = useAnalysis()
   const isBottleneck = system?.bottleneckId === id

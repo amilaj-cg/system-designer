@@ -1,4 +1,4 @@
-import { CATALOG } from '../catalog'
+import { getDef } from '../catalog'
 import type { ComponentType, DesignEdge, DesignNode } from '../types'
 
 let n = 0
@@ -8,7 +8,7 @@ function node(type: ComponentType, label: string, x: number, y: number, cfg: Rec
     id: `s${n}`,
     type: 'component',
     position: { x, y },
-    data: { type, label, config: { ...CATALOG[type].defaults, ...cfg } },
+    data: { type, label, config: { ...getDef(type).defaults, ...cfg } },
   }
 }
 function edge(a: string, b: string): DesignEdge {

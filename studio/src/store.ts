@@ -8,7 +8,7 @@ import {
   type NodeChange,
 } from '@xyflow/react'
 import { create } from 'zustand'
-import { CATALOG, DEFAULT_GLOBALS } from './catalog'
+import { getDef, DEFAULT_GLOBALS } from './catalog'
 import { DEFAULT_THEME_ID } from './themes'
 import { autoLayout, type LayoutDirection } from './lib/layout'
 import type { ComponentType, DesignEdge, DesignFile, DesignNode, GlobalAssumptions } from './types'
@@ -61,10 +61,11 @@ interface StoreState {
   onEdgesChange: (changes: EdgeChange[]) => void
   onConnect: (c: Connection) => void
 
-  addNode: (type: ComponentType, pos: { x: number; y: number }) => void
+  addNode: (type: ComponentType, pos: { x: number; y: number }, parentId?: string | null) => void
   updateNodeConfig: (id: string, key: string, value: number | string) => void
   renameNode: (id: string, label: string) => void
   deleteNode: (id: string) => void
+  reparentNode: (childId: string, parentId: string | null) => void
 
   select: (id: string | null) => void
   selectMany: (ids: string[]) => void
@@ -92,7 +93,53 @@ let counter = 0
 let clipboard: Snapshot | null = null
 
 function defaultConfig(type: ComponentType): Record<string, any> {
-  return { ...CATALOG[type].defaults }
+  return { ...getDef(type).defaults }
+}
+
+/** Absolute canvas position of a node, walking up any parent chain. */
+function absPos(node: DesignNode, byId: Map<string, DesignNode>): { x: number; y: number } {
+  let x = node.position.x
+  let y = node.position.y
+  let parent = node.parentId ? byId.get(node.parentId) : undefined
+  const seen = new Set<string>([node.id])
+  while (parent && !seen.has(parent.id)) {
+    seen.add(parent.id)
+    x += parent.position.x
+    y += parent.position.y
+    parent = parent.parentId ? byId.get(parent.parentId) : undefined
+  }
+  return { x, y }
+}
+
+/** React Flow requires a parent to appear before its children in the array. */
+function sortParentsFirst(nodes: DesignNode[]): DesignNode[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const depth = (n: DesignNode): number => {
+    let d = 0
+    let p = n.parentId ? byId.get(n.parentId) : undefined
+    const seen = new Set<string>([n.id])
+    while (p && !seen.has(p.id)) {
+      seen.add(p.id)
+      d++
+      p = p.parentId ? byId.get(p.parentId) : undefined
+    }
+    return d
+  }
+  return [...nodes].sort((a, b) => depth(a) - depth(b))
+}
+
+/** Detach the children of removed container nodes, converting them to absolute positions. */
+function detachOrphanedChildren(nodes: DesignNode[], removedIds: Set<string>): DesignNode[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  return nodes.map((n) => {
+    if (n.parentId && removedIds.has(n.parentId)) {
+      const parent = byId.get(n.parentId)
+      const pos = parent ? { x: parent.position.x + n.position.x, y: parent.position.y + n.position.y } : n.position
+      const { parentId, extent, expandParent, ...rest } = n as any
+      return { ...rest, position: pos } as DesignNode
+    }
+    return n
+  })
 }
 function snap(s: StoreState): Snapshot {
   return { nodes: s.nodes, edges: s.edges }
@@ -174,17 +221,31 @@ export const useStore = create<StoreState>((set, get) => ({
   onConnect: (c) =>
     set((s) => ({ ...history(s), edges: addEdge({ ...c, animated: true }, s.edges) })),
 
-  addNode: (type, pos) => {
-    const def = CATALOG[type]
+  addNode: (type, pos, parentId) => {
+    const def = getDef(type)
     counter += 1
     const id = nanoid(8)
     const node: DesignNode = {
       id,
-      type: 'component',
+      type: def.isContainer ? 'group' : 'component',
       position: pos,
       data: { type, label: `${def.label} ${counter}`, config: defaultConfig(type) },
     }
-    set((s) => ({ ...history(s), nodes: [...s.nodes, node], selectedId: id, selectedIds: [id] }))
+    if (def.isContainer && def.defaultSize) {
+      node.width = def.defaultSize.width
+      node.height = def.defaultSize.height
+      node.zIndex = 0
+    }
+    if (parentId) {
+      node.parentId = parentId
+      node.expandParent = true
+    }
+    set((s) => ({
+      ...history(s),
+      nodes: sortParentsFirst([...s.nodes, node]),
+      selectedId: id,
+      selectedIds: [id],
+    }))
   },
 
   updateNodeConfig: (id, key, value) =>
@@ -215,13 +276,52 @@ export const useStore = create<StoreState>((set, get) => ({
     }),
 
   deleteNode: (id) =>
-    set((s) => ({
-      ...history(s),
-      nodes: s.nodes.filter((n) => n.id !== id),
-      edges: s.edges.filter((e) => e.source !== id && e.target !== id),
-      selectedId: s.selectedId === id ? null : s.selectedId,
-      selectedIds: s.selectedIds.filter((x) => x !== id),
-    })),
+    set((s) => {
+      const removed = new Set([id])
+      const detached = detachOrphanedChildren(s.nodes, removed)
+      return {
+        ...history(s),
+        nodes: sortParentsFirst(detached.filter((n) => n.id !== id)),
+        edges: s.edges.filter((e) => e.source !== id && e.target !== id),
+        selectedId: s.selectedId === id ? null : s.selectedId,
+        selectedIds: s.selectedIds.filter((x) => x !== id),
+      }
+    }),
+
+  reparentNode: (childId, parentId) =>
+    set((s) => {
+      const byId = new Map(s.nodes.map((n) => [n.id, n]))
+      const child = byId.get(childId)
+      if (!child) return {}
+      if ((child.parentId ?? null) === parentId) return {}
+      // Guard against parenting a node to itself or its own descendant.
+      if (parentId) {
+        let p: DesignNode | undefined = byId.get(parentId)
+        const seen = new Set<string>()
+        while (p) {
+          if (p.id === childId) return {}
+          if (seen.has(p.id)) break
+          seen.add(p.id)
+          p = p.parentId ? byId.get(p.parentId) : undefined
+        }
+      }
+      const childAbs = absPos(child, byId)
+      const parent = parentId ? byId.get(parentId) : undefined
+      const parentAbs = parent ? absPos(parent, byId) : { x: 0, y: 0 }
+      const newPos = parentId ? { x: childAbs.x - parentAbs.x, y: childAbs.y - parentAbs.y } : childAbs
+
+      const nodes = s.nodes.map((n) => {
+        if (n.id !== childId) return n
+        const { parentId: _p, extent: _e, expandParent: _x, ...rest } = n as any
+        const next: DesignNode = { ...rest, position: newPos }
+        if (parentId) {
+          next.parentId = parentId
+          next.expandParent = true
+        }
+        return next
+      })
+      return { ...history(s), nodes: sortParentsFirst(nodes) }
+    }),
 
   select: (selectedId) => set({ selectedId, selectedIds: selectedId ? [selectedId] : [] }),
   selectMany: (ids) => set({ selectedIds: ids, selectedId: ids[0] ?? null }),
@@ -296,6 +396,17 @@ export const useStore = create<StoreState>((set, get) => ({
           data: { ...n.data, config: { ...n.data.config } },
         }
       })
+      // Remap parent links within the pasted set; drop links to uncopied parents.
+      newNodes.forEach((n) => {
+        if (!n.parentId) return
+        const mapped = idMap.get(n.parentId)
+        if (mapped) n.parentId = mapped
+        else {
+          delete (n as any).parentId
+          delete (n as any).extent
+          delete (n as any).expandParent
+        }
+      })
       const newEdges: DesignEdge[] = clipboard!.edges.map((e) => ({
         ...e,
         id: nanoid(8),
@@ -307,7 +418,7 @@ export const useStore = create<StoreState>((set, get) => ({
       const ids = newNodes.map((n) => n.id)
       return {
         ...history(s),
-        nodes: [...deselected, ...newNodes],
+        nodes: sortParentsFirst([...deselected, ...newNodes]),
         edges: [...s.edges, ...newEdges],
         selectedIds: ids,
         selectedId: ids[0] ?? null,
@@ -325,9 +436,10 @@ export const useStore = create<StoreState>((set, get) => ({
       const ids = new Set(selectedNodeIds(s))
       const hasSelEdges = s.edges.some((e) => e.selected)
       if (!ids.size && !hasSelEdges) return {}
+      const detached = detachOrphanedChildren(s.nodes, ids)
       return {
         ...history(s),
-        nodes: s.nodes.filter((n) => !ids.has(n.id)),
+        nodes: sortParentsFirst(detached.filter((n) => !ids.has(n.id))),
         edges: s.edges.filter((e) => !e.selected && !ids.has(e.source) && !ids.has(e.target)),
         selectedId: null,
         selectedIds: [],
@@ -375,7 +487,7 @@ export const useStore = create<StoreState>((set, get) => ({
       name: d.name ?? 'Untitled design',
       themeId: d.theme ?? DEFAULT_THEME_ID,
       globals: { ...DEFAULT_GLOBALS, ...d.globals },
-      nodes: d.nodes ?? [],
+      nodes: sortParentsFirst(d.nodes ?? []),
       edges: d.edges ?? [],
       selectedId: null,
       selectedIds: [],

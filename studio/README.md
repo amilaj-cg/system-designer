@@ -86,6 +86,49 @@ scale reads, LLM bound by TPM/RPM, etc.). Tune any of these in the **Workload as
 panel and per-component fields. Numbers are planning estimates — measure and load-test
 before committing budget or hardware.
 
+## Component packs & extensions
+
+Components are organised into **packs**, registered through a small registry so new
+domains and vendors plug in without touching the core. Built-in packs:
+
+- **Core** — vendor-neutral infrastructure (LB, gateway, server, cache, DB, LLM, …).
+- **Orion Platform** — the enterprise GenAI platform layers: Access Guard, Privacy Guard,
+  Data Shield, Data Hive, Knowledge Hive, GenAI Engine, LLM Gateway, Assembly Line, Agent
+  Hive, Tool Hive, Compliance & Security, Omni-channel. Each has real configs (providers,
+  throughput, workers, TPM/RPM, …) and a capacity model, so an Orion client deployment sizes
+  the same way as core infra.
+- **Layout** — containers (below).
+
+Adding a vendor pack (e.g. Azure) is one call — the same shape the Orion pack uses:
+
+```ts
+// src/catalog/azure.tsx
+import { registerPack } from './catalog'
+registerPack({
+  id: 'azure',
+  name: 'Azure',
+  components: [
+    { type: 'azure.dataFactory', label: 'Data Factory', category: 'Data', accent: '#0078d4',
+      icon: DataFactoryIcon, blurb: '…', fields: [...], defaults: {...},
+      capacity: (c) => ({ rps: c.throughput, note: '…' }) },
+    // …
+  ],
+})
+```
+
+Type ids are namespaced (`orion.*`, `azure.*`) so packs never collide. Palette sections,
+inspector, capacity engine, report, and theming pick them up automatically. Icons come from
+the pack (`icon`), and a vendor **theme** can still override any component's icon by type.
+
+## Containers (wrap components)
+
+Drag a **VM / Host**, **Cluster / Node pool**, or **Boundary / Zone** (the *Layout* section)
+onto the canvas to get a resizable, titled box. Drop components **onto** a container to place
+them inside; drag them out to detach. Containers move their children with them, resize via
+handles, and are purely logical — they carry no traffic and never affect the capacity path
+(deleting one keeps its children, detached to the canvas). Use them to show "runs on this
+VM", "inside this cluster", or "within this VPC / trust boundary".
+
 ## Themes (vendor icon packs)
 
 Icons are resolved through a registry so the community can ship vendor-specific packs
